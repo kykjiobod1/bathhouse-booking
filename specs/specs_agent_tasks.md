@@ -26,12 +26,10 @@
 ## A0) Repo scaffolding
 
 ### A0.1 [ ] Создать структуру репозитория
-Создай структуру:
+Создай структуру в текущей директории (`bathhouse-booking/`):
 - `bathhouse_booking/` — корень Python проекта (здесь будут manage.py, config/, bookings/, bot/)
-- `specs/`
-  - `mvp_tasks.md`
-  - `agent_tasks.md` (этот файл)
-- `README.md` (заполнить базовое описание)
+- `specs/` (уже существует с файлами)
+- `README.md` (уже существует, заполнить базовое описание)
 - `.gitignore` для Python/Django (node_modules, __pycache__, .env, *.pyc, etc.)
 - `.env.example` с переменными:
   ```
@@ -88,7 +86,7 @@ STOP.
 ## A2) Dependencies + pytest
 
 ### A2.1 [ ] Подключить pytest
-Добавить зависимости уже есть в pyproject.toml (pytest, pytest-django).
+В pyproject.toml (созданном в A0.2) уже указаны зависимости pytest и pytest-django.
 
 Сделать:
 - Настроить `pytest.ini` или секцию `[tool.pytest.ini_options]` в `pyproject.toml`:
