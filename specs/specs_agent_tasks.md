@@ -107,7 +107,7 @@ STOP.
 
 ## A3) Docker
 
-### A3.1 [ ] Dockerfile + docker compose
+### A3.1 [x] Dockerfile + docker compose
 Добавь:
 - `Dockerfile` для Django приложения (основа: python:3.12-slim, установка зависимостей, копирование кода, запуск `python manage.py runserver 0.0.0.0:8000`)
 - `docker-compose.yml` с сервисами:
