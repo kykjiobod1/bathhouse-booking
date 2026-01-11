@@ -1,6 +1,10 @@
 from django.contrib import admin
 from .models import Client, Bathhouse, Booking, SystemConfig
 
+admin.site.site_header = "Удачи!!"
+admin.site.site_title = "Удачи!!"
+admin.site.index_title = "Удачи!!"
+
 
 @admin.register(Client)
 class ClientAdmin(admin.ModelAdmin):

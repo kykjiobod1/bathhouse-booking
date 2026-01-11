@@ -5,13 +5,14 @@ from django.core.exceptions import ValidationError
 
 class Client(models.Model):
     name = models.CharField(max_length=200)
-    phone = models.CharField(max_length=20)
-    telegram_id = models.BigIntegerField(null=True, blank=True)
+    phone = models.CharField(max_length=20, blank=True, null=True)
+    telegram_id = models.CharField(max_length=64, null=True, blank=True)
     comment = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self) -> str:
-        return f"{self.name} ({self.phone})"  # type: ignore
+        phone_display = self.phone if self.phone else "нет телефона"
+        return f"{self.name} ({phone_display})"  # type: ignore
 
 
 class Bathhouse(models.Model):
@@ -46,6 +47,13 @@ class Booking(models.Model):
         return f"{self.bathhouse.name} - {self.client.name} ({self.start_datetime:%Y-%m-%d %H:%M})"
 
     def clean(self):
+        # Проверка наличия обязательных полей
+        if self.start_datetime is None or self.end_datetime is None:
+            raise ValidationError({
+                'start_datetime': 'Время начала обязательно',
+                'end_datetime': 'Время окончания обязательно'
+            })
+        
         # Проверка: start_datetime < end_datetime
         if self.start_datetime >= self.end_datetime:
             raise ValidationError({

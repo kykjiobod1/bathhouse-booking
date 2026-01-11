@@ -172,4 +172,54 @@ class BookingCleanTests(TestCase):
             booking2.full_clean()
         except ValidationError:
             self.fail("Cancelled overlap should be allowed")
+    
+    def test_booking_without_dates_raises_validation_error(self):
+        # Создаем бронирование без дат
+        booking = Booking(
+            client=self.client,
+            bathhouse=self.bathhouse,
+            start_datetime=None,
+            end_datetime=None,
+            status="pending"
+        )
+        
+        with self.assertRaises(ValidationError) as context:
+            booking.full_clean()
+        
+        # Проверяем, что ошибка связана с отсутствием дат, а не TypeError
+        error_dict = context.exception.error_dict
+        self.assertIn('start_datetime', error_dict)
+        self.assertIn('end_datetime', error_dict)
+    
+    def test_booking_without_start_date_raises_validation_error(self):
+        # Создаем бронирование без start_datetime
+        booking = Booking(
+            client=self.client,
+            bathhouse=self.bathhouse,
+            start_datetime=None,
+            end_datetime=self.end,
+            status="pending"
+        )
+        
+        with self.assertRaises(ValidationError) as context:
+            booking.full_clean()
+        
+        error_dict = context.exception.error_dict
+        self.assertIn('start_datetime', error_dict)
+    
+    def test_booking_without_end_date_raises_validation_error(self):
+        # Создаем бронирование без end_datetime
+        booking = Booking(
+            client=self.client,
+            bathhouse=self.bathhouse,
+            start_datetime=self.start,
+            end_datetime=None,
+            status="pending"
+        )
+        
+        with self.assertRaises(ValidationError) as context:
+            booking.full_clean()
+        
+        error_dict = context.exception.error_dict
+        self.assertIn('end_datetime', error_dict)
 

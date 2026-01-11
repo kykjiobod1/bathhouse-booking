@@ -8,11 +8,20 @@ class ModelTests(TestCase):
         client = Client.objects.create(  # type: ignore
             name="Иван Иванов",
             phone="+79123456789",
-            telegram_id=123456789,
+            telegram_id="123456789",
             comment="Тестовый клиент"
         )
         self.assertEqual(client.name, "Иван Иванов")
         self.assertEqual(str(client), "Иван Иванов (+79123456789)")
+    
+    def test_create_client_without_phone(self):
+        client = Client.objects.create(  # type: ignore
+            name="Иван Иванов",
+            phone=None,
+            telegram_id="123456789"
+        )
+        self.assertEqual(client.name, "Иван Иванов")
+        self.assertEqual(str(client), "Иван Иванов (нет телефона)")
     
     def test_create_bathhouse(self):
         bathhouse = Bathhouse.objects.create(  # type: ignore

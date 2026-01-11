@@ -56,6 +56,9 @@ Thumbs.db
 # Docker
 docker-compose.override.yml
 
+# Testing
+.pytest_cache/
+
 # Node
 node_modules/
 npm-debug.log*
