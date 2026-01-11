@@ -27,6 +27,61 @@ class BookingAdmin(admin.ModelAdmin):
     date_hierarchy = 'start_datetime'
     ordering = ('-start_datetime',)
     list_select_related = ('client', 'bathhouse')
+    actions = ['approve', 'reject']
+    
+    @admin.action(description="Подтвердить выбранные бронирования")
+    def approve(self, request, queryset):
+        from .services import approve_booking
+        from django.contrib import messages
+        
+        success_count = 0
+        error_count = 0
+        
+        for booking in queryset:
+            try:
+                approve_booking(booking.id)
+                success_count += 1
+            except Exception as e:
+                error_count += 1
+                self.message_user(
+                    request,
+                    f"Ошибка при подтверждении бронирования {booking.id}: {str(e)}",
+                    messages.ERROR
+                )
+        
+        if success_count:
+            self.message_user(
+                request,
+                f"Подтверждено бронирований: {success_count}",
+                messages.SUCCESS
+            )
+    
+    @admin.action(description="Отклонить выбранные бронирования")
+    def reject(self, request, queryset):
+        from .services import reject_booking
+        from django.contrib import messages
+        
+        success_count = 0
+        error_count = 0
+        
+        for booking in queryset:
+            try:
+                reject_booking(booking.id, reason="Отклонено через админку")
+                success_count += 1
+            except Exception as e:
+                error_count += 1
+                self.message_user(
+                    request,
+                    f"Ошибка при отклонении бронирования {booking.id}: {str(e)}",
+                    messages.ERROR
+                )
+        
+        if success_count:
+            self.message_user(
+                request,
+                f"Отклонено бронирований: {success_count}",
+                messages.SUCCESS
+            )
 
 
 @admin.register(SystemConfig)
