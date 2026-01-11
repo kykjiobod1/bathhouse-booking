@@ -85,7 +85,7 @@ STOP.
 
 ## A2) Dependencies + pytest
 
-### A2.1 [ ] Подключить pytest
+### A2.1 [x] Подключить pytest
 В pyproject.toml (созданном в A0.2) уже указаны зависимости pytest и pytest-django.
 
 Сделать:
