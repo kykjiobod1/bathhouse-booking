@@ -3,6 +3,7 @@ from bookings.models import Client, Bathhouse, Booking
 from bookings import services
 from django.core.exceptions import ValidationError
 from django.utils import timezone
+from datetime import time
 
 class ServicesTests(TestCase):
     def setUp(self):
@@ -113,4 +114,96 @@ class ServicesTests(TestCase):
         
         with self.assertRaises(ValidationError):
             services.reject_booking(99999, reason="Тест")
+
+
+class GetAvailableSlotsTests(TestCase):
+    def setUp(self):
+        self.client = Client.objects.create(name="Клиент", phone="+79123456789")  # type: ignore
+        self.bathhouse = Bathhouse.objects.create(name="Баня")  # type: ignore
+        # Создаем SystemConfig с настройками по умолчанию
+        from bookings.models import SystemConfig
+        SystemConfig.objects.create(key="OPEN_HOUR", value="9")  # type: ignore
+        SystemConfig.objects.create(key="CLOSE_HOUR", value="22")  # type: ignore
+        SystemConfig.objects.create(key="SLOT_STEP_MINUTES", value="30")  # type: ignore
+        SystemConfig.objects.create(key="MIN_BOOKING_MINUTES", value="120")  # type: ignore
+    
+    def test_get_available_slots_no_bookings(self):
+        date = timezone.now().date()
+        slots = services.get_available_slots(self.bathhouse, date)
+        
+        # С 9:00 до 22:00 с шагом 30 минут, минимальная длительность 120 минут
+        # Должны быть слоты: 9:00-11:00, 9:30-11:30, ..., 20:00-22:00
+        self.assertGreater(len(slots), 0)
+        for start, end in slots:
+            self.assertEqual(start.date(), date)
+            self.assertEqual(end.date(), date)
+            duration = (end - start).total_seconds() / 60
+            self.assertGreaterEqual(duration, 120)
+    
+    def test_get_available_slots_with_approved_booking(self):
+        date = timezone.now().date()
+        # Создаем approved бронирование с 10:00 до 12:00
+        booking_start = timezone.make_aware(timezone.datetime.combine(date, time(10, 0)))
+        booking_end = timezone.make_aware(timezone.datetime.combine(date, time(12, 0)))
+        
+        Booking.objects.create(  # type: ignore
+            client=self.client,
+            bathhouse=self.bathhouse,
+            start_datetime=booking_start,
+            end_datetime=booking_end,
+            status="approved"
+        )
+        
+        slots = services.get_available_slots(self.bathhouse, date)
+        
+        # Слоты, пересекающиеся с 10:00-12:00, должны быть исключены
+        for start, end in slots:
+            # Проверяем, что слот не пересекается с бронированием
+            self.assertTrue(end <= booking_start or start >= booking_end)
+    
+    def test_get_available_slots_working_hours(self):
+        date = timezone.now().date()
+        slots = services.get_available_slots(self.bathhouse, date)
+        
+        # Все слоты должны быть в пределах рабочих часов 9:00-22:00
+        for start, end in slots:
+            self.assertGreaterEqual(start.hour, 9)
+            self.assertLessEqual(end.hour, 22)
+            if end.hour == 22:
+                self.assertEqual(end.minute, 0)
+    
+    def test_get_available_slots_minimum_duration(self):
+        date = timezone.now().date()
+        slots = services.get_available_slots(self.bathhouse, date)
+        
+        # Все слоты должны быть не менее 120 минут
+        for start, end in slots:
+            duration = (end - start).total_seconds() / 60
+            self.assertGreaterEqual(duration, 120)
+    
+    def test_get_available_slots_non_approved_bookings_ignored(self):
+        date = timezone.now().date()
+        # Создаем pending бронирование с 10:00 до 12:00
+        booking_start = timezone.make_aware(timezone.datetime.combine(date, time(10, 0)))
+        booking_end = timezone.make_aware(timezone.datetime.combine(date, time(12, 0)))
+        
+        Booking.objects.create(  # type: ignore
+            client=self.client,
+            bathhouse=self.bathhouse,
+            start_datetime=booking_start,
+            end_datetime=booking_end,
+            status="pending"
+        )
+        
+        slots = services.get_available_slots(self.bathhouse, date)
+        
+        # Pending бронирование не должно влиять на доступные слоты
+        # Проверяем, что есть слоты, пересекающиеся с 10:00-12:00
+        has_overlapping_slot = False
+        for start, end in slots:
+            if not (end <= booking_start or start >= booking_end):
+                has_overlapping_slot = True
+                break
+        
+        self.assertTrue(has_overlapping_slot, "Pending booking should not block slots")
 
