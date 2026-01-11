@@ -38,6 +38,48 @@ bathhouse-booking/
 4. Открыть http://localhost:8000/admin
 
 ## Разработка
-- Тесты: `pytest`
-- TDD подход для всех компонентов
+
+### Настройка окружения
+```bash
+# Создать виртуальное окружение
+python3 -m venv .venv
+source .venv/bin/activate
+
+# Установить зависимости
+pip install Django~=5.0 pytest pytest-django dj-database-url python-dotenv
+```
+
+### Запуск тестов
+```bash
+# Активировать виртуальное окружение
+source .venv/bin/activate
+
+# Запустить все тесты
+pytest
+
+# Запустить тесты с подробным выводом
+pytest -v
+
+# Запустить тесты из конкретной директории
+pytest tests/
+```
+
+### Запуск Django
+```bash
+# Перейти в директорию Django проекта
+cd bathhouse_booking
+
+# Применить миграции
+python manage.py migrate
+
+# Создать суперпользователя
+python manage.py createsuperuser
+
+# Запустить сервер разработки
+python manage.py runserver
+```
+
+### TDD подход
+- Все компоненты разрабатываются через TDD
 - Бизнес-логика в `bookings/services.py`
+- Тесты в `tests/` и `bookings/tests/`
