@@ -1,4 +1,5 @@
 from django.db import models
+from django.db.models import Q
 from django.core.exceptions import ValidationError
 
 
@@ -45,11 +46,33 @@ class Booking(models.Model):
         return f"{self.bathhouse.name} - {self.client.name} ({self.start_datetime:%Y-%m-%d %H:%M})"
 
     def clean(self):
+        # Проверка: start_datetime < end_datetime
         if self.start_datetime >= self.end_datetime:
             raise ValidationError({
                 'start_datetime': 'Время начала должно быть раньше времени окончания',
                 'end_datetime': 'Время окончания должно быть позже времени начала'
             })
+        
+        # Запрет пересечений только для approved статуса
+        if self.status == 'approved':
+            # Ищем пересекающиеся approved бронирования для той же бани
+            overlapping_bookings = Booking.objects.filter(  # type: ignore
+                bathhouse=self.bathhouse,
+                status='approved',
+                # Проверка пересечения: (start < existing.end) AND (end > existing.start)
+                start_datetime__lt=self.end_datetime,
+                end_datetime__gt=self.start_datetime
+            )
+            
+            # Исключаем сам объект при обновлении существующей записи
+            if self.pk:
+                overlapping_bookings = overlapping_bookings.exclude(pk=self.pk)
+            
+            if overlapping_bookings.exists():
+                raise ValidationError({
+                    'start_datetime': 'Пересечение с другим подтвержденным бронированием',
+                    'end_datetime': 'Пересечение с другим подтвержденным бронированием'
+                })
 
 
 class SystemConfig(models.Model):

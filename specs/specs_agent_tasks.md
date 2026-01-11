@@ -174,7 +174,7 @@ STOP.
 
 ---
 
-### A4.2 [ ] Инварианты в Booking.clean (TDD)
+### A4.2 [x] Инварианты в Booking.clean (TDD)
 Реализовать в `Booking.clean()`:
 1. Проверка: `start_datetime < end_datetime` (иначе ValidationError)
 2. Запрет пересечений **только для approved**:
