@@ -1,0 +1,37 @@
+[project]
+name = "bathhouse-booking"
+version = "0.1.0"
+description = "Bathhouse booking system with Django and Telegram bot"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "Django~=5.0",
+    "psycopg2-binary",
+    "dj-database-url",
+    "python-dotenv",
+    "pytest",
+    "pytest-django",
+    "aiogram~=3.0",
+    "python-dateutil",
+]
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings"
+python_files = ["tests.py", "test_*.py", "*_tests.py"]
+addopts = [
+    "--strict-markers",
+    "--strict-config",
+    "--tb=short",
+]
+
+[project.optional-dependencies]
+dev = [
+    "black",
+    "flake8",
+    "isort",
+    "mypy",
+]
