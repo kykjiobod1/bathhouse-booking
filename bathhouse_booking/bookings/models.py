@@ -1,3 +1,61 @@
 from django.db import models
+from django.core.exceptions import ValidationError
 
-# Create your models here.
+
+class Client(models.Model):
+    name = models.CharField(max_length=200)
+    phone = models.CharField(max_length=20)
+    telegram_id = models.BigIntegerField(null=True, blank=True)
+    comment = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self) -> str:
+        return f"{self.name} ({self.phone})"  # type: ignore
+
+
+class Bathhouse(models.Model):
+    name = models.CharField(max_length=200)
+    capacity = models.IntegerField(null=True, blank=True)
+    is_active = models.BooleanField(default=True)  # type: ignore
+
+    def __str__(self) -> str:
+        return self.name  # type: ignore
+
+
+class Booking(models.Model):
+    STATUS_CHOICES = [
+        ('pending', 'Ожидает оплаты'),
+        ('payment_reported', 'Оплата сообщена'),
+        ('approved', 'Подтверждено'),
+        ('rejected', 'Отклонено'),
+        ('cancelled', 'Отменено'),
+    ]
+
+    client = models.ForeignKey(Client, on_delete=models.CASCADE)
+    bathhouse = models.ForeignKey(Bathhouse, on_delete=models.CASCADE)
+    start_datetime = models.DateTimeField()
+    end_datetime = models.DateTimeField()
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES)
+    price_total = models.IntegerField(null=True, blank=True)
+    prepayment_amount = models.IntegerField(null=True, blank=True)
+    comment = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self) -> str:
+        return f"{self.bathhouse.name} - {self.client.name} ({self.start_datetime:%Y-%m-%d %H:%M})"
+
+    def clean(self):
+        if self.start_datetime >= self.end_datetime:
+            raise ValidationError({
+                'start_datetime': 'Время начала должно быть раньше времени окончания',
+                'end_datetime': 'Время окончания должно быть позже времени начала'
+            })
+
+
+class SystemConfig(models.Model):
+    key = models.CharField(max_length=100, unique=True)
+    value = models.TextField()
+    description = models.TextField(blank=True)
+
+    def __str__(self) -> str:
+        return self.key  # type: ignore

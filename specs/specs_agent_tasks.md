@@ -130,7 +130,7 @@ STOP.
 
 ## A4) Models + invariants (TDD)
 
-### A4.1 [ ] Реализовать модели
+### A4.1 [x] Реализовать модели
 Модели (в `bookings/models.py`):
 - `Client`: 
   - `name` (CharField, max_length=200)
