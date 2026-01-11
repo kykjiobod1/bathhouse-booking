@@ -205,7 +205,7 @@ STOP.
 
 ## A5) Services (TDD)
 
-### A5.1 [ ] Реализовать services.py
+### A5.1 [x] Реализовать services.py
 Создать `bookings/services.py`:
 
 Функции:
@@ -213,13 +213,13 @@ STOP.
   - создаёт Booking(status=pending)
   - вызывает `full_clean()` перед сохранением
   - возвращает созданный объект Booking
-- `report_payment(booking)`
+- `report_payment(booking_id)`
   - переводит в `payment_reported`
   - сохраняет объект
-- `approve_booking(booking)`
+- `approve_booking(booking_id)`
   - переводит в `approved` (должно упасть на overlap, так как `clean()` проверит)
   - сохраняет объект
-- `reject_booking(booking, reason=None)`
+- `reject_booking(booking_id, reason=None)`
   - переводит в `rejected`
   - сохраняет объект
 
