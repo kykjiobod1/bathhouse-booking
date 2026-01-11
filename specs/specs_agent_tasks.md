@@ -43,7 +43,7 @@ STOP.
 
 ---
 
-### A0.2 [ ] Создать pyproject.toml с зависимостями
+### A0.2 [x] Создать pyproject.toml с зависимостями
 Создать `pyproject.toml` с:
 - секцией `[project]` с именем, версией, зависимостями
 - секцией `[build-system]`
@@ -65,7 +65,7 @@ STOP.
 
 ## A1) Django init
 
-### A1.1 [ ] Создать Django проект
+### A1.1 [x] Создать Django проект
 Внутри `bathhouse_booking/`:
 - Создать Django project `config` (`django-admin startproject config .`)
 - Создать Django app `bookings` (`python manage.py startapp bookings`)
