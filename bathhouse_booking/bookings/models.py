@@ -1,6 +1,7 @@
 from django.db import models
 from django.db import models
 from django.core.exceptions import ValidationError
+from django.apps import apps
 
 
 class Client(models.Model):
@@ -9,6 +10,8 @@ class Client(models.Model):
     telegram_id = models.CharField(max_length=64, null=True, blank=True)
     comment = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+
+
 
     def __str__(self) -> str:
         phone_display = self.phone if self.phone else "нет телефона"
@@ -19,6 +22,8 @@ class Bathhouse(models.Model):
     name = models.CharField(max_length=200)
     capacity = models.IntegerField(null=True, blank=True)
     is_active = models.BooleanField(default=True)  # type: ignore
+
+
 
     def __str__(self) -> str:
         return self.name  # type: ignore
@@ -42,6 +47,8 @@ class Booking(models.Model):
     prepayment_amount = models.IntegerField(null=True, blank=True)
     comment = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+
+
 
     def __str__(self) -> str:
         return f"{self.bathhouse.name} - {self.client.name} ({self.start_datetime:%Y-%m-%d %H:%M})"
@@ -88,5 +95,23 @@ class SystemConfig(models.Model):
     value = models.TextField()
     description = models.TextField(blank=True)
 
+
+
     def __str__(self) -> str:
         return self.key  # type: ignore
+
+
+class NotificationQueue(models.Model):
+    """Очередь уведомлений для отправки через бота"""
+    telegram_id = models.CharField(max_length=64)
+    message = models.TextField()
+    booking_id = models.IntegerField(null=True, blank=True)
+    status = models.CharField(max_length=20, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    sent_at = models.DateTimeField(null=True, blank=True)
+    attempts = models.IntegerField(default=0)
+
+
+
+    def __str__(self) -> str:
+        return f"Notification to {self.telegram_id} ({self.status})"

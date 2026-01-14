@@ -4,8 +4,33 @@ from .models import Booking, SystemConfig
 from django.utils import timezone
 from datetime import datetime, time, timedelta
 from typing import List, Tuple
+import logging
+import pytz
+
+logger = logging.getLogger(__name__)
+
+# Часовой пояс бани (GMT+7)
+BATHHOUSE_TIMEZONE = pytz.timezone('Asia/Jakarta')  # GMT+7
 
 def create_booking_request(client, bathhouse, start, end, comment=None):
+    # Проверяем лимит активных бронирований
+    from .config_init import get_config_int
+    
+    max_active_bookings = get_config_int("MAX_ACTIVE_BOOKINGS_PER_CLIENT", 3)
+    
+    # Считаем активные бронирования клиента
+    active_bookings_count = Booking.objects.filter(  # type: ignore
+        client=client,
+        status__in=['pending', 'payment_reported', 'approved']
+    ).count()
+    
+    if active_bookings_count >= max_active_bookings:
+        raise ValidationError(
+            f"У вас уже есть {active_bookings_count} активных бронирований. "
+            f"Максимально допустимое количество: {max_active_bookings}. "
+            "Пожалуйста, дождитесь обработки текущих бронирований или отмените некоторые из них."
+        )
+    
     booking = Booking(
         client=client,
         bathhouse=bathhouse,
@@ -35,9 +60,18 @@ def approve_booking(booking_id):
     except Booking.DoesNotExist:  # type: ignore
         raise ValidationError(f"Бронирование с ID {booking_id} не найдено")
 
+    old_status = booking.status
     booking.status = "approved"
     booking.full_clean()
     booking.save()
+    
+    # Отправляем уведомление
+    try:
+        from .notifications import send_booking_status_notification
+        # Используем простой синхронный вызов
+        send_booking_status_notification(booking_id, old_status, "approved")
+    except Exception as e:
+        logger.error(f"Failed to send approval notification: {e}")
 
 def reject_booking(booking_id, reason=None):
     try:
@@ -45,58 +79,222 @@ def reject_booking(booking_id, reason=None):
     except Booking.DoesNotExist:  # type: ignore
         raise ValidationError(f"Бронирование с ID {booking_id} не найдено")
 
+    old_status = booking.status
     booking.status = "rejected"
     if reason:
         booking.comment = f"{booking.comment}\nОтклонено: {reason}" if booking.comment else f"Отклонено: {reason}"
     booking.full_clean()
     booking.save()
+    
+    # Отправляем уведомление
+    try:
+        from .notifications import send_booking_status_notification
+        send_booking_status_notification(booking_id, old_status, "rejected")
+    except Exception as e:
+        logger.error(f"Failed to send rejection notification: {e}")
+
+
+def cancel_booking(booking_id):
+    """Отменить бронирование (клиентом)"""
+    try:
+        booking = Booking.objects.get(id=booking_id)  # type: ignore
+    except Booking.DoesNotExist:  # type: ignore
+        raise ValidationError(f"Бронирование с ID {booking_id} не найдено")
+    
+    # Проверяем, можно ли отменить бронирование
+    if booking.status not in ['pending', 'payment_reported']:
+        raise ValidationError(f"Нельзя отменить бронирование со статусом {booking.status}")
+    
+    old_status = booking.status
+    booking.status = "cancelled"
+    booking.full_clean()
+    booking.save()
+    
+    # Отправляем уведомление
+    try:
+        from .notifications import send_booking_status_notification
+        send_booking_status_notification(booking_id, old_status, "cancelled")
+    except Exception as e:
+        logger.error(f"Failed to send cancellation notification: {e}")
 
 
 def get_available_slots(bathhouse, date) -> List[Tuple[datetime, datetime]]:
-    # Получаем настройки из SystemConfig
-    def get_config(key, default):
-        try:
-            config = SystemConfig.objects.get(key=key)  # type: ignore
-            return int(config.value)
-        except SystemConfig.DoesNotExist:  # type: ignore
-            return default
+    # Получаем настройки из конфига
+    from .config_init import get_config_int
     
-    open_hour = get_config("OPEN_HOUR", 9)
-    close_hour = get_config("CLOSE_HOUR", 22)
-    slot_step_minutes = get_config("SLOT_STEP_MINUTES", 30)
-    min_booking_minutes = get_config("MIN_BOOKING_MINUTES", 120)
+    open_hour = get_config_int("OPEN_HOUR", 9)
+    close_hour = get_config_int("CLOSE_HOUR", 22)
+    slot_step_minutes = get_config_int("SLOT_STEP_MINUTES", 30)
+    min_booking_minutes = get_config_int("MIN_BOOKING_MINUTES", 120)
     
-    # Получаем approved бронирования на эту дату для этой бани
-    start_of_day = timezone.make_aware(datetime.combine(date, time(0, 0)))
-    end_of_day = timezone.make_aware(datetime.combine(date, time(23, 59, 59)))
+    # Создаем datetime объекты в часовом поясе бани
+    start_of_day_local = BATHHOUSE_TIMEZONE.localize(datetime.combine(date, time(0, 0)))
+    end_of_day_local = BATHHOUSE_TIMEZONE.localize(datetime.combine(date, time(23, 59, 59)))
     
-    approved_bookings = Booking.objects.filter(  # type: ignore
+    # Конвертируем в UTC для сравнения с данными в базе
+    start_of_day_utc = start_of_day_local.astimezone(pytz.UTC)
+    end_of_day_utc = end_of_day_local.astimezone(pytz.UTC)
+    
+    approved_bookings = list(Booking.objects.filter(  # type: ignore
         bathhouse=bathhouse,
         status="approved",
-        start_datetime__lt=end_of_day,
-        end_datetime__gt=start_of_day
-    )
+        start_datetime__lt=end_of_day_utc,
+        end_datetime__gt=start_of_day_utc
+    ))
     
-    # Генерируем все возможные слоты
+    # Генерируем все возможные слоты в часовом поясе бани
     slots = []
-    current_time = timezone.make_aware(datetime.combine(date, time(open_hour, 0)))
-    end_time = timezone.make_aware(datetime.combine(date, time(close_hour, 0)))
+    current_time_local = BATHHOUSE_TIMEZONE.localize(datetime.combine(date, time(open_hour, 0)))
+    end_time_local = BATHHOUSE_TIMEZONE.localize(datetime.combine(date, time(close_hour, 0)))
     
-    while current_time < end_time:
-        slot_start = current_time
-        slot_end = slot_start + timedelta(minutes=min_booking_minutes)
+    while current_time_local < end_time_local:
+        slot_start_local = current_time_local
+        slot_end_local = slot_start_local + timedelta(minutes=min_booking_minutes)
         
-        if slot_end <= end_time:
+        if slot_end_local <= end_time_local:
+            # Конвертируем в UTC для сравнения с бронированиями
+            slot_start_utc = slot_start_local.astimezone(pytz.UTC)
+            slot_end_utc = slot_end_local.astimezone(pytz.UTC)
+            
             # Проверяем пересечение с approved бронированиями
             overlaps = False
             for booking in approved_bookings:
-                if not (slot_end <= booking.start_datetime or slot_start >= booking.end_datetime):
+                if not (slot_end_utc <= booking.start_datetime or slot_start_utc >= booking.end_datetime):
                     overlaps = True
                     break
             
             if not overlaps:
-                slots.append((slot_start, slot_end))
+                slots.append((slot_start_local, slot_end_local))
         
-        current_time += timedelta(minutes=slot_step_minutes)
+        current_time_local += timedelta(minutes=slot_step_minutes)
     
     return slots
+
+
+def get_free_intervals(bathhouse, date) -> List[Tuple[datetime, datetime]]:
+    """
+    Calculate free intervals based on approved bookings and working hours.
+    
+    Args:
+        bathhouse: Bathhouse object
+        date: Date object
+    
+    Returns:
+        List of (start_datetime, end_datetime) tuples for free intervals (in bathhouse timezone)
+    """
+    # Получаем настройки из конфига
+    from .config_init import get_config_int
+    
+    open_hour = get_config_int("OPEN_HOUR", 9)
+    close_hour = get_config_int("CLOSE_HOUR", 22)
+    
+    # Создаем datetime объекты в часовом поясе бани
+    start_of_day_local = BATHHOUSE_TIMEZONE.localize(datetime.combine(date, time(0, 0)))
+    end_of_day_local = BATHHOUSE_TIMEZONE.localize(datetime.combine(date, time(23, 59, 59)))
+    
+    # Конвертируем в UTC для сравнения с данными в базе
+    start_of_day_utc = start_of_day_local.astimezone(pytz.UTC)
+    end_of_day_utc = end_of_day_local.astimezone(pytz.UTC)
+    
+    approved_bookings = list(Booking.objects.filter(  # type: ignore
+        bathhouse=bathhouse,
+        status="approved",
+        start_datetime__lt=end_of_day_utc,
+        end_datetime__gt=start_of_day_utc
+    ))
+    
+    if not approved_bookings:
+        # Whole day is free
+        workday_start = BATHHOUSE_TIMEZONE.localize(datetime.combine(date, time(open_hour, 0)))
+        workday_end = BATHHOUSE_TIMEZONE.localize(datetime.combine(date, time(close_hour, 0)))
+        return [(workday_start, workday_end)]
+    
+    # Sort bookings by start time
+    sorted_bookings = sorted(approved_bookings, key=lambda x: x.start_datetime)
+    
+    # Create workday boundaries in bathhouse timezone
+    workday_start = BATHHOUSE_TIMEZONE.localize(datetime.combine(date, time(open_hour, 0)))
+    workday_end = BATHHOUSE_TIMEZONE.localize(datetime.combine(date, time(close_hour, 0)))
+    
+    free_intervals = []
+    current_start = workday_start
+    
+    for booking in sorted_bookings:
+        # Конвертируем время бронирования в часовой пояс бани для сравнения
+        booking_start_local = booking.start_datetime.astimezone(BATHHOUSE_TIMEZONE)
+        booking_end_local = booking.end_datetime.astimezone(BATHHOUSE_TIMEZONE)
+        
+        # If there's a gap before this booking, it's free
+        if current_start < booking_start_local:
+            free_intervals.append((current_start, booking_start_local))
+        
+        # Move current_start to the end of this booking
+        if current_start < booking_end_local:
+            current_start = booking_end_local
+    
+    # Check for free time after last booking
+    if current_start < workday_end:
+        free_intervals.append((current_start, workday_end))
+    
+    # Filter out zero-length intervals
+    free_intervals = [(start, end) for start, end in free_intervals if start < end]
+    
+    return free_intervals
+
+
+def merge_adjacent_intervals(intervals, gap_minutes=0) -> List[Tuple[datetime, datetime]]:
+    """
+    Merge adjacent or nearly adjacent intervals.
+    
+    Args:
+        intervals: List of (start, end) tuples
+        gap_minutes: Maximum gap to consider intervals as adjacent
+    
+    Returns:
+        List of merged intervals
+    """
+    if not intervals:
+        return []
+    
+    # Sort by start time
+    sorted_intervals = sorted(intervals, key=lambda x: x[0])
+    
+    merged = []
+    current_start, current_end = sorted_intervals[0]
+    
+    for interval_start, interval_end in sorted_intervals[1:]:
+        # If intervals are adjacent or have small gap, merge them
+        if interval_start <= current_end + timedelta(minutes=gap_minutes):
+            current_end = max(current_end, interval_end)
+        else:
+            merged.append((current_start, current_end))
+            current_start, current_end = interval_start, interval_end
+    
+    merged.append((current_start, current_end))
+    return merged
+
+
+def format_free_intervals(intervals) -> str:
+    """
+    Format free intervals for display.
+    
+    Args:
+        intervals: List of (start_datetime, end_datetime) tuples
+    
+    Returns:
+        Formatted string (empty string if no free intervals)
+    """
+    if not intervals:
+        return ""
+    
+    # Format intervals
+    interval_strings = []
+    for interval_start, interval_end in intervals:
+        start_str = interval_start.strftime("%H:%M")
+        end_str = interval_end.strftime("%H:%M")
+        interval_strings.append(f"{start_str}-{end_str}")
+    
+    if len(interval_strings) <= 3:
+        return ", ".join(interval_strings)
+    else:
+        return ", ".join(interval_strings[:3]) + f" и еще {len(interval_strings) - 3}"

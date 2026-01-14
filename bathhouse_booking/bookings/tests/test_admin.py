@@ -1,5 +1,5 @@
 from django.test import TestCase
-from bookings.models import Client, Bathhouse, Booking, SystemConfig
+from bathhouse_booking.bookings.models import Client, Bathhouse, Booking, SystemConfig
 from django.utils import timezone
 
 
@@ -42,7 +42,7 @@ class TestBookingAdminActions(TestCase):
     
     def test_actions_defined_in_admin(self):
         """Test that approve and reject actions are defined in BookingAdmin"""
-        from bookings.admin import BookingAdmin
+        from bathhouse_booking.bookings.admin import BookingAdmin
         from django.contrib.admin.sites import AdminSite
         
         admin = BookingAdmin(Booking, AdminSite())
@@ -53,7 +53,7 @@ class TestBookingAdminActions(TestCase):
     
     def test_approve_action_works_through_services(self):
         """Test that approve action calls services.approve_booking"""
-        from bookings import services
+        from bathhouse_booking.bookings import services
         
         # Вызываем сервис напрямую
         services.approve_booking(self.payment_reported_booking.id)
@@ -63,7 +63,7 @@ class TestBookingAdminActions(TestCase):
     
     def test_reject_action_works_through_services(self):
         """Test that reject action calls services.reject_booking"""
-        from bookings import services
+        from bathhouse_booking.bookings import services
         
         # Вызываем сервис напрямую
         services.reject_booking(self.pending_booking.id, reason="Отклонено через админку")
@@ -74,7 +74,7 @@ class TestBookingAdminActions(TestCase):
     
     def test_approve_action_with_overlap_prohibited(self):
         """Test that approve action respects overlap validation"""
-        from bookings import services
+        from bathhouse_booking.bookings import services
         
         # Создаем approved бронирование
         Booking.objects.create(  # type: ignore

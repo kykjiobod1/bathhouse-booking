@@ -1,6 +1,6 @@
 from django.test import TestCase
-from bookings.models import Client, Bathhouse, Booking
-from bookings import services
+from bathhouse_booking.bookings.models import Client, Bathhouse, Booking
+from bathhouse_booking.bookings import services
 from django.core.exceptions import ValidationError
 from django.utils import timezone
 from datetime import time
@@ -121,7 +121,7 @@ class GetAvailableSlotsTests(TestCase):
         self.client = Client.objects.create(name="Клиент", phone="+79123456789")  # type: ignore
         self.bathhouse = Bathhouse.objects.create(name="Баня")  # type: ignore
         # Создаем SystemConfig с настройками по умолчанию
-        from bookings.models import SystemConfig
+        from bathhouse_booking.bookings.models import SystemConfig
         SystemConfig.objects.create(key="OPEN_HOUR", value="9")  # type: ignore
         SystemConfig.objects.create(key="CLOSE_HOUR", value="22")  # type: ignore
         SystemConfig.objects.create(key="SLOT_STEP_MINUTES", value="30")  # type: ignore

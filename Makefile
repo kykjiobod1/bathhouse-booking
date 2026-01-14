@@ -1,6 +1,6 @@
 # Makefile for Bathhouse Booking project
 
-.PHONY: help up down logs ps migrate test init init-dev
+.PHONY: help up down logs ps migrate test init init-dev bot-logs restart-bot
 
 help:
 	@echo "Available commands:"
@@ -12,10 +12,12 @@ help:
 	@echo "  make test     - Run tests locally"
 	@echo "  make init     - Initialize project (safe)"
 	@echo "  make init-dev - Initialize project with dev superuser"
+	@echo "  make bot-logs - Show bot container logs"
+	@echo "  make restart-bot - Restart bot container"
 
 # Basic commands
 up:
-	docker compose up -d --build
+	docker compose up -d
 
 down:
 	docker compose down
@@ -44,3 +46,10 @@ init: up
 init-dev: init
 	@echo "Creating/updating dev superuser..."
 	@docker compose exec web python manage.py shell -c "from django.contrib.auth import get_user_model; User=get_user_model(); user, created = User.objects.get_or_create(username='admin', defaults={'email':'admin@example.com'}); user.email='admin@example.com'; user.is_staff=True; user.is_superuser=True; user.set_password('123456'); user.save(); print('DEV superuser: admin/123456')"
+
+# Bot commands
+bot-logs:
+	docker compose logs -f --tail=200 bot
+
+restart-bot:
+	docker compose restart bot

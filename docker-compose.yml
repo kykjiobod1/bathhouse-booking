@@ -1,4 +1,4 @@
-version: "3.8"
+
 
 services:
   db:
@@ -27,12 +27,27 @@ services:
       DATABASE_URL: postgres://postgres:postgres@db:5432/bathhouse_booking
       SECRET_KEY: django-insecure-development-key-change-in-production
       DEBUG: "True"
+      PYTHONPATH: /app
     depends_on:
       db:
         condition: service_healthy
     command: >
-      sh -c "python manage.py migrate &&
+      sh -c "cd /app/bathhouse_booking && python manage.py migrate &&
              python manage.py runserver 0.0.0.0:8000"
+
+  bot:
+    build: .
+    volumes:
+      - .:/app
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@db:5432/bathhouse_booking
+      PYTHONPATH: /app
+      DJANGO_SETTINGS_MODULE: bathhouse_booking.config.settings
+    depends_on:
+      db:
+        condition: service_healthy
+    command: python -m bathhouse_booking.bot.main
 
 volumes:
   pgdata:

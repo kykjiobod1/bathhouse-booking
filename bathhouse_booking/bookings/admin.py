@@ -33,12 +33,19 @@ class BookingAdmin(admin.ModelAdmin):
     def approve(self, request, queryset):
         from .services import approve_booking
         from django.contrib import messages
-        
+
         success_count = 0
         error_count = 0
-        
+
         for booking in queryset:
             try:
+                # Проверяем, что у клиента есть telegram_id для уведомлений
+                if not booking.client.telegram_id:
+                    self.message_user(
+                        request,
+                        f"У клиента {booking.client} нет telegram_id. Уведомление не будет отправлено.",
+                        messages.WARNING
+                    )
                 approve_booking(booking.id)
                 success_count += 1
             except Exception as e:
@@ -48,7 +55,7 @@ class BookingAdmin(admin.ModelAdmin):
                     f"Ошибка при подтверждении бронирования {booking.id}: {str(e)}",
                     messages.ERROR
                 )
-        
+
         if success_count:
             self.message_user(
                 request,
@@ -66,13 +73,20 @@ class BookingAdmin(admin.ModelAdmin):
         
         for booking in queryset:
             try:
-                reject_booking(booking.id, reason="Отклонено через админку")
+                # Проверяем, что у клиента есть telegram_id для уведомлений
+                if not booking.client.telegram_id:
+                    self.message_user(
+                        request,
+                        f"У клиента {booking.client} нет telegram_id. Уведомление не будет отправлено.",
+                        messages.WARNING
+                    )
+                reject_booking(booking.id)
                 success_count += 1
             except Exception as e:
                 error_count += 1
                 self.message_user(
                     request,
-                    f"Ошибка при отклонении бронирования {booking.id}: {str(e)}",
+                    f"Ошибка при подтверждении бронирования {booking.id}: {str(e)}",
                     messages.ERROR
                 )
         

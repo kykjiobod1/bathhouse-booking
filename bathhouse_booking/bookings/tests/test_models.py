@@ -1,5 +1,5 @@
 from django.test import TestCase
-from bookings.models import Client, Bathhouse, Booking, SystemConfig
+from bathhouse_booking.bookings.models import Client, Bathhouse, Booking, SystemConfig
 from django.core.exceptions import ValidationError
 from django.utils import timezone
 
