@@ -47,6 +47,11 @@ DEFAULT_CONFIGS = [
         'key': 'TELEGRAM_NOTIFICATIONS_ENABLED',
         'value': 'true',
         'description': 'Включены ли уведомления в Telegram'
+    },
+    {
+        'key': 'TELEGRAM_ADMIN_ID',
+        'value': '',
+        'description': 'Telegram ID администратора для уведомлений'
     }
 ]
 

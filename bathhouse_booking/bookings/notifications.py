@@ -37,6 +37,47 @@ async def send_telegram_message(telegram_id: str, message: str) -> bool:
         logger.error(f"Failed to send message to telegram_id {telegram_id}: {e}")
         return False
 
+async def notify_admin_new_payment(booking_id: int) -> bool:
+    """Уведомить администратора о новой оплате (асинхронная версия)"""
+    from .models import Booking, SystemConfig
+    from django.utils import timezone
+    
+    try:
+        # Получаем Telegram ID администратора из SystemConfig
+        admin_config = await sync_to_async(lambda: SystemConfig.objects.get(key="TELEGRAM_ADMIN_ID"))()
+        admin_telegram_id = admin_config.value
+        
+        if not admin_telegram_id:
+            logger.warning("TELEGRAM_ADMIN_ID not set in SystemConfig")
+            return False
+        
+        booking = await sync_to_async(lambda: Booking.objects.get(id=booking_id))()
+        
+        # Конвертируем время из UTC в локальное (Asia/Jakarta)
+        local_start = timezone.localtime(booking.start_datetime)
+        local_end = timezone.localtime(booking.end_datetime)
+        
+        message = (
+            f"💰 НОВАЯ ОПЛАТА!\n"
+            f"Бронирование #{booking.id}\n"
+            f"Клиент: {booking.client.name}\n"
+            f"Телефон: {booking.client.phone or 'не указан'}\n"
+            f"Telegram: @{booking.client.telegram_id or 'не указан'}\n"
+            f"Баня: {booking.bathhouse.name}\n"
+            f"Дата и время: {local_start.strftime('%d.%m.%Y %H:%M')} - {local_end.strftime('%H:%M')}\n"
+            f"Сумма: {booking.prepayment_amount or 'не указана'} руб.\n\n"
+            f"Перейдите в админку для подтверждения: /admin"
+        )
+        
+        return await send_telegram_message(admin_telegram_id, message)
+        
+    except SystemConfig.DoesNotExist:
+        logger.warning("TELEGRAM_ADMIN_ID not found in SystemConfig")
+        return False
+    except Exception as e:
+        logger.error(f"Failed to send admin notification: {e}")
+        return False
+
 async def notify_booking_status_change(booking_id: int, old_status: str, new_status: str) -> bool:
     """Уведомить клиента об изменении статуса бронирования (асинхронная версия)"""
     from .models import Booking

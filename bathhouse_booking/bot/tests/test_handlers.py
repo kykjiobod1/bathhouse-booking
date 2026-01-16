@@ -2,8 +2,13 @@
 """
 Test for booking handlers
 """
+import os
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'bathhouse_booking.config.settings')
+import django
+django.setup()
+
 import pytest
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from bot.handlers.booking import start_booking, select_bathhouse, select_date, select_slot, report_payment
 from bot.states import BookingStates

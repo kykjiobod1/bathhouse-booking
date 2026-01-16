@@ -90,6 +90,105 @@ class ServicesTests(TestCase):
         overlapping_booking.refresh_from_db()
         self.assertEqual(overlapping_booking.status, "payment_reported")  # статус не должен измениться
     
+    def test_create_booking_request_limit_checking(self):
+        # Создаем SystemConfig с лимитом 2 бронирования
+        from bathhouse_booking.bookings.models import SystemConfig
+        SystemConfig.objects.create(key="MAX_ACTIVE_BOOKINGS_PER_CLIENT", value="2")  # type: ignore
+        
+        # Создаем 2 активных бронирования
+        for i in range(2):
+            Booking.objects.create(  # type: ignore
+                client=self.client,
+                bathhouse=self.bathhouse,
+                start_datetime=self.start + timezone.timedelta(hours=i*3),
+                end_datetime=self.end + timezone.timedelta(hours=i*3),
+                status="pending"
+            )
+        
+        # Попытка создать третье бронирование должна вызвать ошибку
+        with self.assertRaises(ValidationError) as cm:
+            services.create_booking_request(
+                client=self.client,
+                bathhouse=self.bathhouse,
+                start=self.start + timezone.timedelta(hours=6),
+                end=self.end + timezone.timedelta(hours=6)
+            )
+        
+        error_message = str(cm.exception)
+        self.assertIn("У вас уже есть", error_message)
+        self.assertIn("активных бронирований", error_message)
+        self.assertIn("Максимально допустимое количество: 2", error_message)
+    
+    def test_create_booking_request_limit_not_reached(self):
+        # Создаем SystemConfig с лимитом 3 бронирования
+        from bathhouse_booking.bookings.models import SystemConfig
+        SystemConfig.objects.create(key="MAX_ACTIVE_BOOKINGS_PER_CLIENT", value="3")  # type: ignore
+        
+        # Создаем 2 активных бронирования (меньше лимита)
+        for i in range(2):
+            Booking.objects.create(  # type: ignore
+                client=self.client,
+                bathhouse=self.bathhouse,
+                start_datetime=self.start + timezone.timedelta(hours=i*3),
+                end_datetime=self.end + timezone.timedelta(hours=i*3),
+                status="pending"
+            )
+        
+        # Создание третьего бронирования должно пройти успешно
+        booking = services.create_booking_request(
+            client=self.client,
+            bathhouse=self.bathhouse,
+            start=self.start + timezone.timedelta(hours=6),
+            end=self.end + timezone.timedelta(hours=6)
+        )
+        
+        self.assertEqual(booking.status, "pending")
+        self.assertEqual(booking.client, self.client)
+        self.assertEqual(booking.bathhouse, self.bathhouse)
+    
+    def test_create_booking_request_only_active_bookings_counted(self):
+        # Создаем SystemConfig с лимитом 2 бронирования
+        from bathhouse_booking.bookings.models import SystemConfig
+        SystemConfig.objects.create(key="MAX_ACTIVE_BOOKINGS_PER_CLIENT", value="2")  # type: ignore
+        
+        # Создаем 1 активное бронирование
+        Booking.objects.create(  # type: ignore
+            client=self.client,
+            bathhouse=self.bathhouse,
+            start_datetime=self.start,
+            end_datetime=self.end,
+            status="pending"
+        )
+        
+        # Создаем 1 неактивное бронирование (отклоненное)
+        Booking.objects.create(  # type: ignore
+            client=self.client,
+            bathhouse=self.bathhouse,
+            start_datetime=self.start + timezone.timedelta(hours=3),
+            end_datetime=self.end + timezone.timedelta(hours=3),
+            status="rejected"
+        )
+        
+        # Создаем 1 неактивное бронирование (отмененное)
+        Booking.objects.create(  # type: ignore
+            client=self.client,
+            bathhouse=self.bathhouse,
+            start_datetime=self.start + timezone.timedelta(hours=6),
+            end_datetime=self.end + timezone.timedelta(hours=6),
+            status="cancelled"
+        )
+        
+        # Создание второго активного бронирования должно пройти успешно
+        # (только pending считается активным)
+        booking = services.create_booking_request(
+            client=self.client,
+            bathhouse=self.bathhouse,
+            start=self.start + timezone.timedelta(hours=9),
+            end=self.end + timezone.timedelta(hours=9)
+        )
+        
+        self.assertEqual(booking.status, "pending")
+    
     def test_reject_booking_changes_status(self):
         booking = Booking.objects.create(  # type: ignore
             client=self.client,

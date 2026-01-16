@@ -12,6 +12,7 @@ dependencies = [
     "pytest",
     "pytest-django",
     "aiogram~=3.0",
+    "aiogram-calendar~=0.6.0",
     "python-dateutil",
     "pytz",
 ]

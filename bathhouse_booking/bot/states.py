@@ -5,4 +5,6 @@ class BookingStates(StatesGroup):
     waiting_for_bathhouse = State()
     waiting_for_date = State()
     waiting_for_slot = State()
+    waiting_for_phone = State()
     waiting_for_payment = State()
+    waiting_for_schedule_date = State()

@@ -4,6 +4,7 @@ from django.utils import timezone
 from django.core.exceptions import ValidationError
 from datetime import datetime, timedelta
 from asgiref.sync import sync_to_async
+from aiogram_calendar import SimpleCalendar, SimpleCalendarCallback
 import logging
 import time
 import pytz
@@ -71,22 +72,64 @@ async def start_booking(callback_query: types.CallbackQuery, state: FSMContext) 
         # Удаляем предыдущие сообщения с клавиатурами
         await _cleanup_previous_messages(callback_query, state)
         
-        start_msg = await callback_query.message.answer("Начинаем процесс бронирования...")
-        await state.set_state(BookingStates.waiting_for_bathhouse)
-        await _update_activity_timestamp(state)
-        
-        # Сохраняем ID стартового сообщения
-        await state.update_data(start_message_id=start_msg.message_id)
-        
-        # Получить список активных бань из БД (асинхронно)
-        bathhouses = await sync_to_async(lambda: list(Bathhouse.objects.filter(is_active=True)))()
-        if bathhouses:
-            keyboard = bathhouses_keyboard(bathhouses)
-            selection_msg = await callback_query.message.answer("Выберите баню:", reply_markup=keyboard)
-            # Сохраняем ID сообщения с выбором бани
-            await state.update_data(bathhouse_selection_message_id=selection_msg.message_id)
-        else:
-            await callback_query.message.answer("К сожалению, сейчас нет доступных бань для бронирования.")
+        try:
+            # Получаем или создаем клиента
+            client, created = await sync_to_async(Client.objects.get_or_create)(
+                telegram_id=str(callback_query.from_user.id),
+                defaults={
+                    'name': callback_query.from_user.full_name or callback_query.from_user.first_name or "Unknown",
+                    'phone': "",
+                    'telegram_id': str(callback_query.from_user.id)
+                }
+            )
+            
+            # Проверяем лимит активных бронирований
+            await sync_to_async(services.check_booking_limit)(client)
+            
+            # Лимит не превышен, продолжаем процесс бронирования
+            start_msg = await callback_query.message.answer("Начинаем процесс бронирования...")
+            await state.set_state(BookingStates.waiting_for_bathhouse)
+            await _update_activity_timestamp(state)
+            
+            # Сохраняем ID стартового сообщения
+            await state.update_data(start_message_id=start_msg.message_id)
+            
+            # Получить список активных бань из БД (асинхронно)
+            bathhouses = await sync_to_async(lambda: list(Bathhouse.objects.filter(is_active=True)))()
+            if bathhouses:
+                keyboard = bathhouses_keyboard(bathhouses)
+                selection_msg = await callback_query.message.answer("Выберите баню:", reply_markup=keyboard)
+                # Сохраняем ID сообщения с выбором бани
+                await state.update_data(bathhouse_selection_message_id=selection_msg.message_id)
+            else:
+                await callback_query.message.answer("К сожалению, сейчас нет доступных бань для бронирования.")
+                await state.clear()
+                
+        except ValidationError as e:
+            from ..keyboards import back_to_main_keyboard
+            # Обрабатываем ошибку лимита бронирований
+            error_message = str(e)
+            if "У вас уже есть" in error_message and "активных бронирований" in error_message:
+                # Показываем пользователю понятное сообщение об ошибке лимита
+                await callback_query.message.answer(
+                    error_message,
+                    reply_markup=back_to_main_keyboard()
+                )
+            else:
+                # Для других ValidationError показываем общее сообщение
+                logger.error(f"Validation error checking booking limit: {e}", exc_info=True)
+                await callback_query.message.answer(
+                    "Произошла ошибка при проверке возможности бронирования. Пожалуйста, попробуйте позже.",
+                    reply_markup=back_to_main_keyboard()
+                )
+            await state.clear()
+        except Exception as e:
+            from ..keyboards import back_to_main_keyboard
+            logger.error(f"Error starting booking: {e}", exc_info=True)
+            await callback_query.message.answer(
+                "Произошла ошибка при начале бронирования. Пожалуйста, попробуйте позже или обратитесь к администратору.",
+                reply_markup=back_to_main_keyboard()
+            )
             await state.clear()
 
 
@@ -109,10 +152,78 @@ async def select_bathhouse(callback_query: types.CallbackQuery, state: FSMContex
         await state.set_state(BookingStates.waiting_for_date)
         await _update_activity_timestamp(state)
         
-        keyboard = date_selection_keyboard()
+        keyboard = await date_selection_keyboard()
         date_msg = await callback_query.message.answer("Выберите дату:", reply_markup=keyboard)
         # Сохраняем ID сообщения с выбором даты
         await state.update_data(date_selection_message_id=date_msg.message_id)
+
+
+@router.callback_query(BookingStates.waiting_for_date, SimpleCalendarCallback.filter())
+async def process_calendar_date(callback_query: types.CallbackQuery, state: FSMContext) -> None:
+    """Обработка выбора даты из календаря бронирования"""
+    if not callback_query.message or not callback_query.data:
+        return
+    
+    try:
+        # Используем стандартный обработчик календаря
+        calendar = SimpleCalendar()
+        # Распаковываем callback данные
+        data = SimpleCalendarCallback.unpack(callback_query.data)
+        selected, selected_date = await calendar.process_selection(callback_query, data)
+        
+        if not selected:
+            # Пользователь переключил месяц, календарь уже обновился
+            return
+        
+        logger.info(f"Selected date for booking: {selected_date}")
+        
+        # Сохраняем дату в состоянии
+        await state.update_data(selected_date=selected_date)
+        await state.set_state(BookingStates.waiting_for_slot)
+        await _update_activity_timestamp(state)
+        
+        # Получаем bathhouse_id из состояния
+        data = await state.get_data()
+        bathhouse_id = data.get("bathhouse_id")
+        if not bathhouse_id:
+            from ..keyboards import back_to_main_keyboard
+            await callback_query.message.answer(
+                "Ошибка: баня не выбрана. Начните заново.",
+                reply_markup=back_to_main_keyboard()
+            )
+            await state.clear()
+            return
+        
+        # Получаем доступные слоты
+        try:
+            bathhouse = await sync_to_async(Bathhouse.objects.get)(id=bathhouse_id)
+            available_slots = await sync_to_async(services.get_available_slots)(bathhouse, selected_date)
+            
+            logger.info(f"Available slots for bathhouse {bathhouse_id} on {selected_date}: {len(available_slots)} slots")
+            
+            if available_slots:
+                from ..keyboards import slots_keyboard
+                keyboard = slots_keyboard(available_slots)
+                slots_msg = await callback_query.message.answer("Выберите доступное время:", reply_markup=keyboard)
+                # Сохраняем ID сообщения с выбором времени
+                await state.update_data(slots_selection_message_id=slots_msg.message_id)
+            else:
+                await callback_query.message.answer("К сожалению, на эту дату нет доступных слотов. Выберите другую дату.")
+                # Возвращаем к выбору даты
+                await state.set_state(BookingStates.waiting_for_date)
+                from ..keyboards import date_selection_keyboard
+                keyboard = await date_selection_keyboard()
+                date_msg = await callback_query.message.answer("Выберите другую дату:", reply_markup=keyboard)
+                await state.update_data(date_selection_message_id=date_msg.message_id)
+        except Exception as e:
+            logger.error(f"Error getting available slots: {e}")
+            await callback_query.message.answer(f"Ошибка при получении доступных слотов: {str(e)}")
+            await state.clear()
+            
+    except Exception as e:
+        logger.error(f"Error processing calendar date: {e}", exc_info=True)
+        await callback_query.message.answer("Произошла ошибка при обработке даты. Пожалуйста, попробуйте позже.")
+        await state.clear()
 
 
 @router.callback_query(lambda c: c.data and c.data.startswith("select_date:"))
@@ -174,7 +285,7 @@ async def select_date(callback_query: types.CallbackQuery, state: FSMContext) ->
                 await callback_query.message.answer("К сожалению, на эту дату нет доступных слотов. Выберите другую дату.")
                 # Возвращаем к выбору даты
                 await state.set_state(BookingStates.waiting_for_date)
-                keyboard = date_selection_keyboard()
+                keyboard = await date_selection_keyboard()
                 date_msg = await callback_query.message.answer("Выберите другую дату:", reply_markup=keyboard)
                 await state.update_data(date_selection_message_id=date_msg.message_id)
         except Exception as e:
@@ -544,7 +655,7 @@ async def back_to_date_selection(callback_query: types.CallbackQuery, state: FSM
         await _update_activity_timestamp(state)
         
         from ..keyboards import date_selection_keyboard
-        keyboard = date_selection_keyboard()
+        keyboard = await date_selection_keyboard()
         date_msg = await callback_query.message.answer("Выберите дату:", reply_markup=keyboard)
         await state.update_data(date_selection_message_id=date_msg.message_id)
 
@@ -612,7 +723,7 @@ async def back_to_slots_selection(callback_query: types.CallbackQuery, state: FS
                 # Возвращаем к выбору даты
                 await state.set_state(BookingStates.waiting_for_date)
                 from ..keyboards import date_selection_keyboard
-                keyboard = date_selection_keyboard()
+                keyboard = await date_selection_keyboard()
                 date_msg = await callback_query.message.answer("Выберите другую дату:", reply_markup=keyboard)
                 await state.update_data(date_selection_message_id=date_msg.message_id)
                 
@@ -624,7 +735,7 @@ async def back_to_slots_selection(callback_query: types.CallbackQuery, state: FS
 
 @router.callback_query(lambda c: c.data == "view_schedule")
 async def view_schedule(callback_query: types.CallbackQuery, state: FSMContext) -> None:
-    """Показать расписание свободных окон"""
+    """Показать календарь для выбора даты просмотра расписания"""
     await callback_query.answer()
     if callback_query.message:
         await _cleanup_previous_messages(callback_query, state)
@@ -638,39 +749,94 @@ async def view_schedule(callback_query: types.CallbackQuery, state: FSMContext) 
                 await callback_query.message.answer("К сожалению, сейчас нет доступных бань.")
                 return
             
-            # Получаем даты: сегодня, завтра, послезавтра
-            today = timezone.now().date()
-            dates = [
-                ("Сегодня", today),
-                ("Завтра", today + timedelta(days=1)),
-                ("Послезавтра", today + timedelta(days=2))
-            ]
+            # Сохраняем список бань в состоянии
+            bathhouse_ids = [bh.id for bh in bathhouses]
+            await state.update_data(schedule_bathhouse_ids=bathhouse_ids)
             
-            # Собираем информацию о расписании
-            schedule_text = "📅 *Расписание свободных окон*\n\n"
+            # Устанавливаем состояние ожидания выбора даты для расписания
+            await state.set_state(BookingStates.waiting_for_schedule_date)
+            
+            # Показываем календарь для выбора даты
+            from ..calendar_utils import get_calendar_keyboard
+            keyboard = await get_calendar_keyboard(back_callback="back_to_main")
+            await callback_query.message.answer(
+                "Выберите дату для просмотра расписания:",
+                reply_markup=keyboard
+            )
+            
+        except Exception as e:
+            logger.error(f"Error showing schedule calendar: {e}", exc_info=True)
+            await callback_query.message.answer("Произошла ошибка при получении расписания. Пожалуйста, попробуйте позже.")
+
+
+@router.callback_query(BookingStates.waiting_for_schedule_date, SimpleCalendarCallback.filter())
+async def process_schedule_calendar_date(callback_query: types.CallbackQuery, state: FSMContext) -> None:
+    """Обработка выбора даты в календаре расписания"""
+    await callback_query.answer()
+    if callback_query.message and callback_query.data:
+        await _cleanup_previous_messages(callback_query, state)
+        await _update_activity_timestamp(state)
+        
+        try:
+            # Используем стандартный обработчик календаря
+            calendar = SimpleCalendar()
+            # Распаковываем callback данные
+            data = SimpleCalendarCallback.unpack(callback_query.data)
+            selected, selected_date = await calendar.process_selection(callback_query, data)
+            
+            if not selected:
+                # Пользователь переключил месяц, календарь уже обновился
+                return
+            
+            logger.info(f"Selected date for schedule: {selected_date}")
+            
+            # Получаем список ID бань из состояния
+            data = await state.get_data()
+            bathhouse_ids = data.get("schedule_bathhouse_ids", [])
+            
+            if not bathhouse_ids:
+                await callback_query.message.answer("Ошибка: список бань не найден. Начните заново.")
+                await state.clear()
+                return
+            
+            # Получаем бани по ID
+            bathhouses = []
+            for bh_id in bathhouse_ids:
+                try:
+                    bathhouse = await sync_to_async(Bathhouse.objects.get)(id=bh_id)
+                    bathhouses.append(bathhouse)
+                except Bathhouse.DoesNotExist:
+                    logger.warning(f"Bathhouse with id {bh_id} not found")
+            
+            if not bathhouses:
+                await callback_query.message.answer("К сожалению, сейчас нет доступных бань.")
+                await state.clear()
+                return
+            
+            # Собираем информацию о расписании на выбранную дату
+            schedule_text = f"📅 *Расписание свободных окон на {selected_date.strftime('%d.%m.%Y')}*\n\n"
             
             for bathhouse in bathhouses:
                 schedule_text += f"*{bathhouse.name}:*\n"
                 
-                for date_name, date_obj in dates:
-                    try:
-                        # Получаем свободные интервалы
-                        free_intervals = await sync_to_async(services.get_free_intervals)(bathhouse, date_obj)
+                try:
+                    # Получаем свободные интервалы
+                    free_intervals = await sync_to_async(services.get_free_intervals)(bathhouse, selected_date)
+                    
+                    # Объединяем смежные интервалы (с допуском 30 минут)
+                    merged_intervals = await sync_to_async(services.merge_adjacent_intervals)(free_intervals, gap_minutes=30)
+                    
+                    # Форматируем свободные интервалы
+                    formatted_intervals = await sync_to_async(services.format_free_intervals)(merged_intervals)
+                    
+                    if formatted_intervals:
+                        schedule_text += f"  Свободно: {formatted_intervals}\n"
+                    else:
+                        schedule_text += f"  Нет свободного времени\n"
                         
-                        # Объединяем смежные интервалы (с допуском 30 минут)
-                        merged_intervals = await sync_to_async(services.merge_adjacent_intervals)(free_intervals, gap_minutes=30)
-                        
-                        # Форматируем свободные интервалы
-                        formatted_intervals = await sync_to_async(services.format_free_intervals)(merged_intervals)
-                        
-                        if formatted_intervals:
-                            schedule_text += f"  {date_name}: свободно {formatted_intervals}\n"
-                        else:
-                            schedule_text += f"  {date_name}: нет свободного времени\n"
-                            
-                    except Exception as e:
-                        logger.error(f"Error getting free intervals for {bathhouse.name} on {date_name}: {e}")
-                        schedule_text += f"  {date_name}: ошибка получения данных\n"
+                except Exception as e:
+                    logger.error(f"Error getting free intervals for {bathhouse.name} on {selected_date}: {e}")
+                    schedule_text += f"  Ошибка получения данных\n"
                 
                 schedule_text += "\n"
             
@@ -682,6 +848,13 @@ async def view_schedule(callback_query: types.CallbackQuery, state: FSMContext) 
                 reply_markup=back_to_main_keyboard()
             )
             
+            # Очищаем состояние
+            await state.clear()
+            
+        except ValueError as e:
+            logger.error(f"Error parsing date from callback: {callback_query.data}, error: {e}")
+            await callback_query.message.answer("Ошибка: некорректный формат даты. Попробуйте еще раз.")
         except Exception as e:
-            logger.error(f"Error viewing schedule: {e}", exc_info=True)
+            logger.error(f"Error processing schedule date: {e}", exc_info=True)
             await callback_query.message.answer("Произошла ошибка при получении расписания. Пожалуйста, попробуйте позже.")
+            await state.clear()

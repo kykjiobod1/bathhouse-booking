@@ -6,6 +6,8 @@ def main_menu_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.add(InlineKeyboardButton(text="Забронировать баню", callback_data="book_bathhouse"))
     builder.add(InlineKeyboardButton(text="Посмотреть расписание", callback_data="view_schedule"))
+    builder.add(InlineKeyboardButton(text="Мои бронирования", callback_data="my_bookings"))
+    builder.add(InlineKeyboardButton(text="Написать админу", callback_data="message_admin"))
     builder.adjust(1)
     return builder.as_markup()
 
@@ -26,18 +28,10 @@ def bathhouses_keyboard(bathhouses) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def date_selection_keyboard() -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
-    builder.add(InlineKeyboardButton(text="Сегодня", callback_data="select_date:today"))
-    builder.add(InlineKeyboardButton(text="Завтра", callback_data="select_date:tomorrow"))
-    builder.add(InlineKeyboardButton(text="Послезавтра", callback_data="select_date:day_after_tomorrow"))
-    # Добавляем кнопку "назад" к выбору бани
-    builder.add(InlineKeyboardButton(
-        text="⬅️ Назад",
-        callback_data="back_to_bathhouse_selection"
-    ))
-    builder.adjust(1)
-    return builder.as_markup()
+async def date_selection_keyboard() -> InlineKeyboardMarkup:
+    """Устаревшая функция, используйте календарь вместо этого"""
+    from .calendar_utils import get_calendar_keyboard
+    return await get_calendar_keyboard()
 
 
 def slots_keyboard(slots) -> InlineKeyboardMarkup:

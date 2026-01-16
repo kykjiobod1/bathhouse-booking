@@ -17,6 +17,9 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import path
 
+# Устанавливаем ссылку "Открыть сайт" на страницу админки
+admin.site.site_url = '/admin/'
+
 urlpatterns = [
     path('admin/', admin.site.urls),
 ]

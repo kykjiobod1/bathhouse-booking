@@ -17,9 +17,10 @@ from asgiref.sync import sync_to_async
 
 from .routers import router
 from .dependencies import setup_dependencies
+from .error_handlers import setup_error_handlers
 from bathhouse_booking.bookings.notifications import set_bot_instance
 
-logging.basicConfig(level=logging.INFO)
+# logging.basicConfig(level=logging.INFO)  # Handled by Django LOGGING config
 logger = logging.getLogger(__name__)
 
 
@@ -104,6 +105,9 @@ async def main() -> None:
     dp.include_router(router)
     
     await setup_dependencies(dp)
+    
+    # Настраиваем обработчики ошибок
+    setup_error_handlers(dp)
     
     # Запускаем фоновую задачу для обработки очереди уведомлений
     queue_task = asyncio.create_task(notification_queue_worker(bot))
