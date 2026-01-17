@@ -78,4 +78,33 @@ class ModelTests(TestCase):
         )
         self.assertEqual(config.key, "OPEN_HOUR")
         self.assertEqual(str(config), "OPEN_HOUR")
+    
+    def test_system_config_contains_hourly_price(self):
+        from bathhouse_booking.bookings.config_init import DEFAULT_CONFIGS
+        hourly_price_configs = [c for c in DEFAULT_CONFIGS if c['key'] == 'HOURLY_PRICE']
+        self.assertEqual(len(hourly_price_configs), 1, "HOURLY_PRICE should be in DEFAULT_CONFIGS")
+        config = hourly_price_configs[0]
+        self.assertEqual(config['key'], 'HOURLY_PRICE')
+        self.assertIsInstance(config['value'], str)
+        self.assertIn('Цена за час', config['description'])
+    
+    def test_booking_in_past_raises_error(self):
+        client = Client.objects.create(name="Клиент", phone="+79123456789")  # type: ignore
+        bathhouse = Bathhouse.objects.create(name="Баня")  # type: ignore
+        past = timezone.now() - timezone.timedelta(hours=1)
+        future = past + timezone.timedelta(hours=2)
+        
+        booking = Booking(
+            client=client,
+            bathhouse=bathhouse,
+            start_datetime=past,
+            end_datetime=future,
+            status="pending"
+        )
+        try:
+            booking.full_clean()
+            self.fail("Should raise ValidationError for booking in past")
+        except ValidationError as e:
+            self.assertIn("start_datetime", str(e))
+            self.assertIn("прошлом", str(e))
 

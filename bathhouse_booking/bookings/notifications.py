@@ -169,3 +169,49 @@ def send_booking_status_notification(booking_id: int, old_status: str, new_statu
             
     except Exception as e:
         logger.error(f"Failed to prepare booking status notification: {e}")
+
+def queue_admin_payment_notification(booking_id: int) -> None:
+    """Добавить уведомление администратору о новой оплате в очередь (синхронная версия)"""
+    from .models import Booking, SystemConfig, NotificationQueue
+    from django.utils import timezone
+    
+    try:
+        # Получаем Telegram ID администратора из SystemConfig
+        admin_config = SystemConfig.objects.get(key="TELEGRAM_ADMIN_ID")
+        admin_telegram_id = admin_config.value
+        
+        if not admin_telegram_id:
+            logger.warning("TELEGRAM_ADMIN_ID not set in SystemConfig")
+            return
+        
+        booking = Booking.objects.get(id=booking_id)
+        
+        # Конвертируем время из UTC в локальное (Asia/Jakarta)
+        local_start = timezone.localtime(booking.start_datetime)
+        local_end = timezone.localtime(booking.end_datetime)
+        
+        message = (
+            f"💰 НОВАЯ ОПЛАТА!\n"
+            f"Бронирование #{booking.id}\n"
+            f"Клиент: {booking.client.name}\n"
+            f"Телефон: {booking.client.phone or 'не указан'}\n"
+            f"Telegram: @{booking.client.telegram_id or 'не указан'}\n"
+            f"Баня: {booking.bathhouse.name}\n"
+            f"Дата и время: {local_start.strftime('%d.%m.%Y %H:%M')} - {local_end.strftime('%H:%M')}\n"
+            f"Сумма: {booking.prepayment_amount or 'не указана'} руб.\n\n"
+            f"Перейдите в админку для подтверждения: /admin"
+        )
+        
+        # Сохраняем уведомление в базе данных для отправки ботом
+        NotificationQueue.objects.create(
+            telegram_id=admin_telegram_id,
+            message=message,
+            booking_id=booking_id,
+            status="payment_reported"
+        )
+        logger.info(f"Admin payment notification queued for booking {booking_id}")
+        
+    except SystemConfig.DoesNotExist:
+        logger.warning("TELEGRAM_ADMIN_ID not found in SystemConfig")
+    except Exception as e:
+        logger.error(f"Failed to queue admin payment notification: {e}")

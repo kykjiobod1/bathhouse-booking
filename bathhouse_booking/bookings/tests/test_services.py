@@ -9,8 +9,11 @@ class ServicesTests(TestCase):
     def setUp(self):
         self.client = Client.objects.create(name="Клиент", phone="+79123456789")  # type: ignore
         self.bathhouse = Bathhouse.objects.create(name="Баня")  # type: ignore
-        self.start = timezone.now()
+        self.start = timezone.now() + timezone.timedelta(hours=1)  # будущее время, чтобы пройти проверку прошлого
         self.end = self.start + timezone.timedelta(hours=2)
+        # Создаем конфигурацию HOURLY_PRICE для тестов расчета стоимости
+        from bathhouse_booking.bookings.models import SystemConfig
+        SystemConfig.objects.get_or_create(key="HOURLY_PRICE", defaults={'value': '1000', 'description': 'Цена за час'})  # type: ignore
     
     def test_create_booking_request_creates_pending(self):
         booking = services.create_booking_request(
@@ -35,6 +38,20 @@ class ServicesTests(TestCase):
                 end=self.start,
                 comment="Невалидные даты"
             )
+    
+    def test_create_booking_request_past_start_raises_error(self):
+        past = timezone.now() - timezone.timedelta(hours=1)
+        future = past + timezone.timedelta(hours=2)
+        with self.assertRaises(ValidationError) as cm:
+            services.create_booking_request(
+                client=self.client,
+                bathhouse=self.bathhouse,
+                start=past,
+                end=future,
+                comment="Бронирование в прошлое"
+            )
+        error_message = str(cm.exception)
+        self.assertIn("прошлом", error_message)
     
     def test_report_payment_changes_status(self):
         booking = Booking.objects.create(  # type: ignore
@@ -213,6 +230,25 @@ class ServicesTests(TestCase):
         
         with self.assertRaises(ValidationError):
             services.reject_booking(99999, reason="Тест")
+    
+    def test_create_booking_request_calculates_price(self):
+        # Устанавливаем HOURLY_PRICE = 1000
+        from bathhouse_booking.bookings.models import SystemConfig
+        SystemConfig.objects.update_or_create(key="HOURLY_PRICE", defaults={'value': '1000', 'description': 'Цена за час'})  # type: ignore
+        # Бронирование на 2 часа
+        start = timezone.now() + timezone.timedelta(hours=1)
+        end = start + timezone.timedelta(hours=2)
+        booking = services.create_booking_request(
+            client=self.client,
+            bathhouse=self.bathhouse,
+            start=start,
+            end=end,
+            comment="Тест расчета стоимости"
+        )
+        # Ожидаемая стоимость: 2 часа * 1000 = 2000
+        self.assertEqual(booking.price_total, 2000)
+        # prepayment_amount может быть равен price_total или 0, пока ожидаем 0
+        self.assertEqual(booking.prepayment_amount, 0)
 
 
 class GetAvailableSlotsTests(TestCase):

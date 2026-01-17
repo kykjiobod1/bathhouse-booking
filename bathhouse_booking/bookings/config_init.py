@@ -14,6 +14,11 @@ DEFAULT_CONFIGS = [
         'description': 'Инструкция по оплате для клиентов'
     },
     {
+        'key': 'HOURLY_PRICE',
+        'value': '1000',
+        'description': 'Цена за час бронирования (в рублях)'
+    },
+    {
         'key': 'OPEN_HOUR',
         'value': '9',
         'description': 'Час открытия (0-23)'

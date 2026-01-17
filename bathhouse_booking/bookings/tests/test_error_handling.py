@@ -19,7 +19,7 @@ class ErrorHandlingTests(TestCase):
     def setUp(self):
         self.client = Client.objects.create(name="Клиент", phone="+79123456789")  # type: ignore
         self.bathhouse = Bathhouse.objects.create(name="Баня")  # type: ignore
-        self.start = timezone.now()
+        self.start = timezone.now() + timezone.timedelta(hours=1)  # будущее время, чтобы пройти проверку прошлого
         self.end = self.start + timezone.timedelta(hours=2)
         
         # Создаем тестовое бронирование

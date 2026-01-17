@@ -6,6 +6,7 @@ from datetime import datetime, time, timedelta
 from typing import List, Tuple
 import logging
 import pytz
+from .config_init import get_config_int
 
 logger = logging.getLogger(__name__)
 
@@ -62,12 +63,19 @@ def create_booking_request(client, bathhouse, start, end, comment=None):
         # Проверяем лимит активных бронирований
         check_booking_limit(client)
         
+        # Рассчитываем стоимость бронирования
+        hourly_price = get_config_int("HOURLY_PRICE", 1000)  # дефолтная цена 1000
+        duration_hours = (end - start).total_seconds() / 3600
+        price_total = int(round(duration_hours * hourly_price))
+        
         booking = Booking(
             client=client,
             bathhouse=bathhouse,
             start_datetime=start,
             end_datetime=end,
             status="pending",
+            price_total=price_total,
+            prepayment_amount=0,
             comment=comment or ""
         )
 
@@ -140,19 +148,13 @@ def report_payment(booking_id):
         logger.error(f"Database error reporting payment for booking {booking_id}: {e}")
         raise
     
-    # Отправляем уведомление администратору
+    # Отправляем уведомление администратору (через очередь)
     try:
-        from .notifications import notify_admin_new_payment
-        import asyncio
-        
-        # Запускаем асинхронную задачу для отправки уведомления
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        loop.run_until_complete(notify_admin_new_payment(booking_id))
-        loop.close()
-        
+        from .notifications import queue_admin_payment_notification
+        queue_admin_payment_notification(booking_id)
+        logger.info(f"Admin payment notification queued for booking {booking_id}")
     except Exception as e:
-        logger.error(f"Failed to send admin notification for booking {booking_id}: {e}")
+        logger.error(f"Failed to queue admin notification for booking {booking_id}: {e}")
 
 def approve_booking(booking_id):
     """

@@ -376,12 +376,10 @@ async def select_slot(callback_query: types.CallbackQuery, state: FSMContext) ->
             start_datetime=start_datetime,
             end_datetime=end_datetime
         )
-        await state.set_state(BookingStates.waiting_for_payment)
         await _update_activity_timestamp(state)
         
-        # Создаем бронирование
+        # Получаем или создаем клиента
         try:
-            # Получаем или создаем клиента (в реальном приложении здесь будет логика определения клиента)
             client, created = await sync_to_async(Client.objects.get_or_create)(
                 telegram_id=str(callback_query.from_user.id),
                 defaults={
@@ -391,29 +389,49 @@ async def select_slot(callback_query: types.CallbackQuery, state: FSMContext) ->
                 }
             )
             
-            bathhouse = await sync_to_async(Bathhouse.objects.get)(id=bathhouse_id)
-            booking = await sync_to_async(services.create_booking_request)(
-                client=client,
-                bathhouse=bathhouse,
-                start=start_datetime,
-                end=end_datetime
-            )
-            
-            # Сохраняем ID бронирования в состоянии
-            await state.update_data(booking_id=booking.id)
-            
-            # Показываем инструкцию по оплате из конфига (асинхронно)
-            from bathhouse_booking.bookings.config_init import get_config
-            payment_text = await sync_to_async(get_config)("PAYMENT_INSTRUCTION", 
-                                     "Пожалуйста, переведите оплату на карту •1234 5678 9012 3456• и нажмите 'Я оплатил'")
-            
-            keyboard = payment_confirmation_keyboard()
-            msg = await callback_query.message.answer(
-                f"Бронирование создано! ID: {booking.id}\n\n{payment_text}",
-                reply_markup=keyboard
-            )
-            # Сохраняем ID сообщения для возможного удаления при отмене
-            await state.update_data(booking_created_message_id=msg.message_id)
+            # Проверяем, есть ли у клиента номер телефона
+            if client.phone and client.phone.strip():
+                # Телефон есть, создаем бронирование сразу
+                await state.set_state(BookingStates.waiting_for_payment)
+                bathhouse = await sync_to_async(Bathhouse.objects.get)(id=bathhouse_id)
+                booking = await sync_to_async(services.create_booking_request)(
+                    client=client,
+                    bathhouse=bathhouse,
+                    start=start_datetime,
+                    end=end_datetime
+                )
+                
+                # Сохраняем ID бронирования в состоянии
+                await state.update_data(booking_id=booking.id)
+                
+                # Показываем инструкцию по оплате из конфига (асинхронно)
+                from bathhouse_booking.bookings.config_init import get_config
+                payment_text = await sync_to_async(get_config)("PAYMENT_INSTRUCTION", 
+                                         "Пожалуйста, переведите оплату на карту •1234 5678 9012 3456• и нажмите 'Я оплатил'")
+                
+                # Форматируем сумму оплаты
+                amount = booking.price_total or 0
+                amount_text = f"Сумма к оплате: {amount} руб.\n\n"
+                
+                keyboard = payment_confirmation_keyboard()
+                msg = await callback_query.message.answer(
+                    f"Бронирование создано! ID: {booking.id}\n{amount_text}{payment_text}",
+                    reply_markup=keyboard
+                )
+                # Сохраняем ID сообщения для возможного удаления при отмене
+                await state.update_data(booking_created_message_id=msg.message_id)
+            else:
+                # Телефона нет, переходим к вводу телефона
+                await state.set_state(BookingStates.waiting_for_phone)
+                from ..keyboards import skip_phone_keyboard
+                await callback_query.message.answer(
+                    "📱 *У вас не указан номер телефона*\n\n"
+                    "Хотите добавить его для связи? Отправьте номер телефона в формате:\n"
+                    "+7XXXXXXXXXX или 8XXXXXXXXXX\n\n"
+                    "Или нажмите 'Пропустить' чтобы продолжить без телефона.",
+                    reply_markup=skip_phone_keyboard(),
+                    parse_mode="Markdown"
+                )
             
         except ValidationError as e:
             from ..keyboards import back_to_main_keyboard
@@ -423,6 +441,12 @@ async def select_slot(callback_query: types.CallbackQuery, state: FSMContext) ->
                 # Показываем пользователю понятное сообщение об ошибке лимита
                 await callback_query.message.answer(
                     error_message,
+                    reply_markup=back_to_main_keyboard()
+                )
+            elif "прошлом" in error_message:
+                # Ошибка бронирования в прошлое
+                await callback_query.message.answer(
+                    "Нельзя забронировать баню в прошлом. Пожалуйста, выберите будущую дату и время.",
                     reply_markup=back_to_main_keyboard()
                 )
             else:
@@ -473,6 +497,7 @@ async def report_payment(callback_query: types.CallbackQuery, state: FSMContext)
         
         try:
             await sync_to_async(services.report_payment)(booking_id)
+            
             from ..keyboards import main_menu_keyboard
             await callback_query.bot.send_message(
                 chat_id=chat_id,

@@ -45,7 +45,7 @@ init: up
 # Dev-only initialization with superuser
 init-dev: init
 	@echo "Creating/updating dev superuser..."
-	@docker compose exec web python manage.py shell -c "from django.contrib.auth import get_user_model; User=get_user_model(); user, created = User.objects.get_or_create(username='admin', defaults={'email':'admin@example.com'}); user.email='admin@example.com'; user.is_staff=True; user.is_superuser=True; user.set_password('123456'); user.save(); print('DEV superuser: admin/123456')"
+	@docker compose exec web python manage.py shell -c "from django.contrib.auth import get_user_model; User=get_user_model(); user, created = User.objects.get_or_create(username='admin', defaults={'email':'admin@example.com'}); user.email='admin@example.com'; user.is_staff=True; user.is_superuser=True; user.set_password('$(or $(ADMIN_PASSWORD),admin123)'); user.save(); print('DEV superuser: admin/$(or $(ADMIN_PASSWORD),admin123)')"
 
 # Bot commands
 bot-logs:

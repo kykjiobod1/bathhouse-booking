@@ -2,6 +2,7 @@ from django.db import models
 from django.db import models
 from django.core.exceptions import ValidationError
 from django.apps import apps
+from django.utils import timezone
 
 
 class Client(models.Model):
@@ -66,6 +67,13 @@ class Booking(models.Model):
             raise ValidationError({
                 'start_datetime': 'Время начала должно быть раньше времени окончания',
                 'end_datetime': 'Время окончания должно быть позже времени начала'
+            })
+        
+        # Запрет бронирования в прошлое
+        if self.start_datetime < timezone.now():
+            raise ValidationError({
+                'start_datetime': 'Время начала не может быть в прошлом',
+                'end_datetime': 'Время начала не может быть в прошлом'
             })
         
         # Запрет пересечений только для approved статуса

@@ -6,8 +6,11 @@ from bathhouse_booking.bookings.models import Client, Bathhouse
 from bathhouse_booking.bookings import services
 from bathhouse_booking.bookings.config_init import get_config
 from django.core.exceptions import ValidationError
+from django.utils import timezone
 import re
 import logging
+
+from ..states import BookingStates
 
 logger = logging.getLogger(__name__)
 
@@ -52,8 +55,6 @@ async def skip_phone(callback: types.CallbackQuery, state: FSMContext):
 @router.message(lambda message: message.text and not message.text.startswith('/'))
 async def handle_phone_input(message: types.Message, state: FSMContext):
     """Обработать ввод номера телефона"""
-    from ..states import BookingStates
-    
     current_state = await state.get_state()
     if current_state != BookingStates.waiting_for_phone.state:
         return
@@ -95,6 +96,15 @@ async def create_booking_with_phone(callback, state: FSMContext, phone: str):
     if not all([start_datetime, end_datetime, bathhouse_id]):
         await callback.message.answer(
             "❌ Ошибка: отсутствуют необходимые данные. Пожалуйста, начните бронирование заново.",
+            reply_markup=back_to_main_keyboard()
+        )
+        await state.clear()
+        return
+    
+    # Проверяем, что время начала не в прошлом
+    if start_datetime < timezone.now():
+        await callback.message.answer(
+            "Нельзя забронировать баню в прошлом. Пожалуйста, выберите будущую дату и время.",
             reply_markup=back_to_main_keyboard()
         )
         await state.clear()
@@ -154,7 +164,8 @@ async def create_booking_with_phone(callback, state: FSMContext, phone: str):
             f"{payment_text}"
         )
         
-        msg = await callback.message.edit_text(
+        # Отправляем новое сообщение с информацией о бронировании
+        msg = await callback.message.answer(
             booking_info,
             reply_markup=keyboard
         )
@@ -162,11 +173,23 @@ async def create_booking_with_phone(callback, state: FSMContext, phone: str):
         # Сохраняем ID сообщения для возможного удаления при отмене
         await state.update_data(booking_created_message_id=msg.message_id)
         
+        # Пытаемся удалить предыдущее сообщение с запросом телефона (если есть)
+        try:
+            if hasattr(callback, 'message') and callback.message:
+                await callback.message.delete()
+        except Exception as e:
+            logger.debug(f"Could not delete previous message: {e}")
+        
     except ValidationError as e:
         error_message = str(e)
         if "У вас уже есть" in error_message and "активных бронирований" in error_message:
             await callback.message.answer(
                 error_message,
+                reply_markup=back_to_main_keyboard()
+            )
+        elif "прошлом" in error_message:
+            await callback.message.answer(
+                "Нельзя забронировать баню в прошлом. Пожалуйста, выберите будущую дату и время.",
                 reply_markup=back_to_main_keyboard()
             )
         else:

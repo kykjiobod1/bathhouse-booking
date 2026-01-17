@@ -73,3 +73,37 @@ def back_to_main_keyboard() -> InlineKeyboardMarkup:
         callback_data="back_to_main"
     ))
     return builder.as_markup()
+
+
+def phone_keyboard() -> InlineKeyboardMarkup:
+    """Клавиатура для ввода номера телефона"""
+    builder = InlineKeyboardBuilder()
+    builder.add(InlineKeyboardButton(
+        text="📱 Ввести номер телефона",
+        callback_data="enter_phone"
+    ))
+    builder.add(InlineKeyboardButton(
+        text="⏭️ Пропустить",
+        callback_data="skip_phone"
+    ))
+    builder.add(InlineKeyboardButton(
+        text="⬅️ Назад",
+        callback_data="back_to_slots_selection"
+    ))
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def skip_phone_keyboard() -> InlineKeyboardMarkup:
+    """Клавиатура только с кнопкой 'Пропустить' для ввода телефона"""
+    builder = InlineKeyboardBuilder()
+    builder.add(InlineKeyboardButton(
+        text="⏭️ Пропустить",
+        callback_data="skip_phone"
+    ))
+    builder.add(InlineKeyboardButton(
+        text="⬅️ Назад",
+        callback_data="back_to_slots_selection"
+    ))
+    builder.adjust(1)
+    return builder.as_markup()
