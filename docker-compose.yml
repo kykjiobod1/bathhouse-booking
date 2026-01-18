@@ -3,6 +3,7 @@
 services:
   db:
     image: postgres:15
+    restart: unless-stopped
     volumes:
       - pgdata:/var/lib/postgresql/data
     environment:
@@ -19,6 +20,7 @@ services:
 
   web:
     build: .
+    restart: unless-stopped
     volumes:
       - .:/app
     ports:
@@ -37,6 +39,7 @@ services:
 
   bot:
     build: .
+    restart: unless-stopped
     volumes:
       - .:/app
     env_file: .env
