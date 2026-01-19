@@ -9,6 +9,7 @@ dependencies = [
     "psycopg2-binary",
     "dj-database-url",
     "python-dotenv",
+    "whitenoise",
     "pytest",
     "pytest-django",
     "aiogram~=3.0",
