@@ -9,7 +9,7 @@ async def get_calendar_keyboard(show_back_button: bool = True, back_callback: st
     :param show_back_button: показывать кнопку назад
     :param back_callback: callback_data для кнопки назад
     """
-    calendar = SimpleCalendar(locale='ru', cancel_btn='Отмена', today_btn='Сегодня')
+    calendar = SimpleCalendar(cancel_btn='Отмена', today_btn='Сегодня')
     calendar_markup = await calendar.start_calendar()
     
     if show_back_button:
@@ -33,7 +33,7 @@ async def process_calendar_selection(callback_query: CallbackQuery, state: FSMCo
     """Обработать выбор даты из календаря"""
     # Распаковываем callback данные
     data = SimpleCalendarCallback.unpack(callback_query.data)
-    selected, date = await SimpleCalendar(locale='ru', cancel_btn='Отмена', today_btn='Сегодня').process_selection(callback_query, data)
+    selected, date = await SimpleCalendar(cancel_btn='Отмена', today_btn='Сегодня').process_selection(callback_query, data)
     
     if selected:
         # Сохраняем выбранную дату в состоянии
