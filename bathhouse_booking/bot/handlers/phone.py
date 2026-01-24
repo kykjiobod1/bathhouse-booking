@@ -154,6 +154,13 @@ async def create_booking_with_phone(callback, state: FSMContext, phone: str):
         start_local = start_datetime.astimezone(bathhouse_tz)
         end_local = end_datetime.astimezone(bathhouse_tz)
         
+        # Форматируем сумму оплаты
+        amount = booking.price_total or 0
+        if amount <= 0:
+            logger.warning(f"Booking {booking.id} has invalid price: {booking.price_total}")
+            amount = 1000  # fallback цена
+        amount_text = f"💰 Сумма к оплате: {amount} руб.\n\n"
+        
         booking_info = (
             f"✅ Бронирование создано!\n\n"
             f"📅 Дата: {start_local.strftime('%d.%m.%Y')}\n"
@@ -161,6 +168,7 @@ async def create_booking_with_phone(callback, state: FSMContext, phone: str):
             f"🏠 Баня: {bathhouse.name}\n"
             f"📱 Телефон: {phone if phone else 'не указан'}\n"
             f"🔢 ID бронирования: {booking.id}\n\n"
+            f"{amount_text}"
             f"{payment_text}"
         )
         
