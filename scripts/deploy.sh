@@ -1,29 +1,30 @@
 #!/bin/bash
-set -e
-
-# Deployment script for bathhouse-booking
-# Usage: ./scripts/deploy.sh [server_host]
+set -euo pipefail
 
 SERVER_HOST="${1:-178.20.44.147}"
+SERVER_USER="root"
+SSH_KEY="${SSH_KEY:-$HOME/.ssh/id_ed25519_bathhouse}"
 PROJECT_DIR="/opt/bathhouse-booking"
 
-echo "Deploying to ${SERVER_HOST}..."
+echo "Deploying to ${SERVER_USER}@${SERVER_HOST}..."
 
-# SSH to server and execute deployment commands
-ssh "${SERVER_HOST}" << EOF
-set -e
+ssh -i "${SSH_KEY}" "${SERVER_USER}@${SERVER_HOST}" << EOF
+set -euo pipefail
+
 cd "${PROJECT_DIR}"
 
+if [ ! -f .env ]; then
+  echo "ERROR: .env not found in ${PROJECT_DIR}. Create it first."
+  exit 1
+fi
+
 echo "Pulling latest changes..."
-git pull
+git pull --ff-only
 
-echo "Running initialization..."
+echo "Running init..."
 make init
-
-echo "Restarting services..."
-docker compose restart web bot
 
 echo "Deployment completed successfully!"
 EOF
 
-echo "Deployment to ${SERVER_HOST} finished."
+echo "Done."

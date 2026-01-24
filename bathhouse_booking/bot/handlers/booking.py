@@ -166,7 +166,7 @@ async def process_calendar_date(callback_query: types.CallbackQuery, state: FSMC
     
     try:
         # Используем стандартный обработчик календаря
-        calendar = SimpleCalendar()
+        calendar = SimpleCalendar(locale='ru_RU')
         # Распаковываем callback данные
         data = SimpleCalendarCallback.unpack(callback_query.data)
         selected, selected_date = await calendar.process_selection(callback_query, data)
@@ -411,6 +411,10 @@ async def select_slot(callback_query: types.CallbackQuery, state: FSMContext) ->
                 
                 # Форматируем сумму оплаты
                 amount = booking.price_total or 0
+                if amount <= 0:
+                    logger.warning(f"Booking {booking.id} has invalid price: {booking.price_total}")
+                    amount = 1000  # fallback цена
+                
                 amount_text = f"Сумма к оплате: {amount} руб.\n\n"
                 
                 keyboard = payment_confirmation_keyboard()
@@ -804,7 +808,7 @@ async def process_schedule_calendar_date(callback_query: types.CallbackQuery, st
         
         try:
             # Используем стандартный обработчик календаря
-            calendar = SimpleCalendar()
+            calendar = SimpleCalendar(locale='ru_RU.UTF-8')
             # Распаковываем callback данные
             data = SimpleCalendarCallback.unpack(callback_query.data)
             selected, selected_date = await calendar.process_selection(callback_query, data)

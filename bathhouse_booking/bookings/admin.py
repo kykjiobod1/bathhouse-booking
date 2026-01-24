@@ -20,14 +20,35 @@ class BathhouseAdmin(admin.ModelAdmin):
 
 @admin.register(Booking)
 class BookingAdmin(admin.ModelAdmin):
-    list_display = ['client', 'bathhouse', 'start_datetime', 'end_datetime', 'status', 'price_total', 'created_at']
+    list_display = ['client', 'bathhouse', 'start_datetime', 'end_datetime', 'status', 'price_total', 'comment', 'created_at']
     list_filter = ['status', 'bathhouse', 'start_datetime']
     search_fields = ['client__name', 'client__phone', 'comment']
-    readonly_fields = ['created_at', 'prepayment_amount', 'status']
+    readonly_fields = ['created_at', 'prepayment_amount']
     date_hierarchy = 'start_datetime'
     ordering = ('-start_datetime',)
     list_select_related = ('client', 'bathhouse')
-    actions = ['approve', 'reject', 'confirm_payment']
+    actions = ['approve', 'reject']
+    
+    def save_model(self, request, obj, form, change):
+        """Запретить установку статуса payment_reported через прямое редактирование."""
+        if change and 'status' in form.changed_data:
+            # Если пытаемся изменить статус
+            from .models import Booking
+            old_status = Booking.objects.get(pk=obj.pk).status
+            new_status = obj.status
+            
+            # Запрещаем установку payment_reported через админку
+            if new_status == 'payment_reported':
+                from django.contrib import messages
+                messages.error(
+                    request,
+                    "Статус 'Оплата сообщена' нельзя установить через прямое редактирование. "
+                    "Используйте действие 'Подтвердить выбранные бронирования'."
+                )
+                # Восстанавливаем старый статус
+                obj.status = old_status
+        
+        super().save_model(request, obj, form, change)
     
     @admin.action(description="Подтвердить выбранные бронирования")
     def approve(self, request, queryset):
@@ -97,41 +118,7 @@ class BookingAdmin(admin.ModelAdmin):
                 messages.SUCCESS
             )
     
-    @admin.action(description="Подтвердить оплату выбранных бронирований")
-    def confirm_payment(self, request, queryset):
-        from .services import report_payment
-        from django.contrib import messages
-        
-        success_count = 0
-        error_count = 0
-        
-        for booking in queryset:
-            try:
-                # Проверяем, что бронирование в статусе pending
-                if booking.status != 'pending':
-                    self.message_user(
-                        request,
-                        f"Бронирование {booking.id} не в статусе 'ожидает оплаты' (текущий статус: {booking.status})",
-                        messages.WARNING
-                    )
-                    continue
-                
-                report_payment(booking.id)
-                success_count += 1
-            except Exception as e:
-                error_count += 1
-                self.message_user(
-                    request,
-                    f"Ошибка при подтверждении оплаты бронирования {booking.id}: {str(e)}",
-                    messages.ERROR
-                )
-        
-        if success_count:
-            self.message_user(
-                request,
-                f"Оплата подтверждена для {success_count} бронирований",
-                messages.SUCCESS
-            )
+
 
 
 @admin.register(SystemConfig)

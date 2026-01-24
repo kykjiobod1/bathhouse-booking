@@ -27,17 +27,17 @@ def check_booking_limit(client):
     
     max_active_bookings = get_config_int("MAX_ACTIVE_BOOKINGS_PER_CLIENT", 3)
     
-    # Считаем активные бронирования клиента
+    # Считаем активные бронирования клиента (только approved)
     active_bookings_count = Booking.objects.filter(  # type: ignore
         client=client,
-        status__in=['pending', 'payment_reported', 'approved']
+        status='approved'
     ).count()
     
     if active_bookings_count >= max_active_bookings:
         raise ValidationError(
-            f"У вас уже есть {active_bookings_count} активных бронирований. "
+            f"У вас уже есть {active_bookings_count} подтвержденных бронирований. "
             f"Максимально допустимое количество: {max_active_bookings}. "
-            "Пожалуйста, дождитесь обработки текущих бронирований или отмените некоторые из них."
+            "Пожалуйста, дождитесь завершения текущих бронирований или отмените некоторые из них."
         )
 
 
@@ -65,8 +65,28 @@ def create_booking_request(client, bathhouse, start, end, comment=None):
         
         # Рассчитываем стоимость бронирования
         hourly_price = get_config_int("HOURLY_PRICE", 1000)  # дефолтная цена 1000
+        
+        # Защита от нулевой или отрицательной цены
+        if hourly_price <= 0:
+            logger.warning(f"Invalid hourly price: {hourly_price}, using default 1000")
+            hourly_price = 1000
+        
         duration_hours = (end - start).total_seconds() / 3600
         price_total = int(round(duration_hours * hourly_price))
+        
+        # Валидация: цена должна быть не менее hourly_price (цена за 1 час)
+        if price_total < hourly_price:
+            logger.warning(
+                f"Price too low: {price_total} руб. for "
+                f"duration {duration_hours}h, hourly price {hourly_price} руб."
+            )
+            price_total = hourly_price  # Минимальная цена - стоимость 1 часа
+        
+        # Логирование расчета цены для отладки
+        logger.info(
+            f"Price calculated: {price_total} руб. for "
+            f"{duration_hours:.1f}h at {hourly_price} руб./h"
+        )
         
         booking = Booking(
             client=client,
