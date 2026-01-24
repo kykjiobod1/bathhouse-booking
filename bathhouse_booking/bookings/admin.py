@@ -1,9 +1,25 @@
 from django.contrib import admin
+from django import forms
 from .models import Client, Bathhouse, Booking, SystemConfig
 
 admin.site.site_header = "Удачи!!"
 admin.site.site_title = "Удачи!!"
 admin.site.index_title = "Удачи!!"
+
+
+class BookingAdminForm(forms.ModelForm):
+    """Форма бронирования для админки, исключающая статус 'approved'."""
+    class Meta:
+        model = Booking
+        fields = '__all__'
+    
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Исключаем статус 'approved' из выбора
+        status_field = self.fields['status']
+        current_choices = list(status_field.choices)
+        filtered_choices = [choice for choice in current_choices if choice[0] != 'approved']
+        status_field.choices = filtered_choices
 
 
 @admin.register(Client)
@@ -28,6 +44,7 @@ class BookingAdmin(admin.ModelAdmin):
     ordering = ('-start_datetime',)
     list_select_related = ('client', 'bathhouse')
     actions = ['approve', 'reject']
+    form = BookingAdminForm
     
     def save_model(self, request, obj, form, change):
         """Запретить установку статуса payment_reported через прямое редактирование."""
@@ -43,6 +60,17 @@ class BookingAdmin(admin.ModelAdmin):
                 messages.error(
                     request,
                     "Статус 'Оплата сообщена' нельзя установить через прямое редактирование. "
+                    "Используйте действие 'Подтвердить выбранные бронирования'."
+                )
+                # Восстанавливаем старый статус
+                obj.status = old_status
+            
+            # Запрещаем установку approved через админку
+            if new_status == 'approved' and old_status != 'approved':
+                from django.contrib import messages
+                messages.error(
+                    request,
+                    "Статус 'Подтверждено' нельзя установить через прямое редактирование. "
                     "Используйте действие 'Подтвердить выбранные бронирования'."
                 )
                 # Восстанавливаем старый статус

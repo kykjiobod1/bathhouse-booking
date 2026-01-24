@@ -14,7 +14,7 @@ from aiogram.types import ErrorEvent
 logger = logging.getLogger(__name__)
 
 
-async def error_handler(event: ErrorEvent, dp: Dispatcher) -> None:
+async def error_handler(event: ErrorEvent) -> None:
     """
     Глобальный обработчик ошибок для бота.
     Логирует ошибки и отправляет пользователю безопасное сообщение.

@@ -47,11 +47,10 @@ class BotErrorHandlingTests(TestCase):
         error_event = MagicMock()
         error_event.update = update
         error_event.exception = Exception("Test error")
-        error_event.dp = self.dp
         
         # Для этого теста мы просто проверяем, что обработчик не падает
         try:
-            await error_handler(error_event, self.dp)
+            await error_handler(error_event)
         except Exception as e:
             self.fail(f"Error handler raised an exception: {e}")
     
@@ -73,11 +72,10 @@ class BotErrorHandlingTests(TestCase):
         error_event = MagicMock()
         error_event.update = update
         error_event.exception = TelegramBadRequest(message="Bad request", method="sendMessage")
-        error_event.dp = self.dp
         
         # Для этого теста мы просто проверяем, что обработчик не падает
         try:
-            await error_handler(error_event, self.dp)
+            await error_handler(error_event)
         except Exception as e:
             self.fail(f"Error handler raised an exception: {e}")
     
@@ -98,11 +96,10 @@ class BotErrorHandlingTests(TestCase):
         error_event = MagicMock()
         error_event.update = None
         error_event.exception = Exception("Test error")
-        error_event.dp = self.dp
         
         # Для этого теста мы просто проверяем, что обработчик не падает
         try:
-            await error_handler(error_event, self.dp)
+            await error_handler(error_event)
         except Exception as e:
             self.fail(f"Error handler raised an exception: {e}")
     
@@ -124,10 +121,9 @@ class BotErrorHandlingTests(TestCase):
         error_event = MagicMock()
         error_event.update = update
         error_event.exception = Exception("Test error")
-        error_event.dp = self.dp
         
         # Вызываем обработчик ошибок - не должно быть исключения
         try:
-            await error_handler(error_event, self.dp)
+            await error_handler(error_event)
         except Exception as e:
             self.fail(f"Error handler raised an exception: {e}")
